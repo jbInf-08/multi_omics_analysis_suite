@@ -1,6 +1,4 @@
-"""
-Gene prediction helpers for assembly, FASTA annotation, and integration workflows.
-"""
+"""Gene prediction helpers for assembly, FASTA annotation, and integration workflows."""
 
 from __future__ import annotations
 
@@ -10,10 +8,12 @@ import subprocess
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
+
+import contextlib
 
 from backend.annotation.gene_prediction import (
     AugustusPredictor,
@@ -24,7 +24,7 @@ from backend.annotation.gene_prediction import (
     ORFFinder,
     ProdigalPredictor,
 )
-from backend.assembly.assemblers import AssemblyResult, Contig
+from backend.assembly.assemblers import AssemblyResult
 from backend.bioinformatics.formats import FastaParser
 
 _PREDICTOR_MAP = {
@@ -51,14 +51,14 @@ def predict_genes_for_contig(
     contig_id: str,
     predictor: str = "prodigal",
     **predictor_kwargs: Any,
-) -> List[GenePrediction]:
+) -> list[GenePrediction]:
     """Run gene prediction on a single contig sequence."""
     p = get_gene_predictor(predictor, **predictor_kwargs)
     return p.predict(sequence.upper().replace(" ", "").replace("\n", ""), contig_id=contig_id)
 
 
-def _gene_to_dict(g: GenePrediction, include_sequences: bool) -> Dict[str, Any]:
-    d: Dict[str, Any] = {
+def _gene_to_dict(g: GenePrediction, include_sequences: bool) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "id": g.id,
         "contig": g.contig,
         "start": g.start,
@@ -84,9 +84,8 @@ def annotate_assembly_result(
     use_prodigal_binary: bool = False,
     prodigal_meta_mode: bool = False,
     **predictor_kwargs: Any,
-) -> Dict[str, Any]:
-    """
-    Predict genes on every contig in an assembly result.
+) -> dict[str, Any]:
+    """Predict genes on every contig in an assembly result.
 
     Returns summaries and concatenated GFF suitable for downstream annotation.
     """
@@ -109,9 +108,9 @@ def annotate_assembly_result(
         finally:
             fasta_tmp.unlink(missing_ok=True)
 
-    all_predictions: List[GenePrediction] = []
-    gff_lines: List[str] = ["##gff-version 3"]
-    per_contig: List[Dict[str, Any]] = []
+    all_predictions: list[GenePrediction] = []
+    gff_lines: list[str] = ["##gff-version 3"]
+    per_contig: list[dict[str, Any]] = []
 
     for contig in assembly.contigs:
         preds = predict_genes_for_contig(contig.sequence, contig.id, predictor, **predictor_kwargs)
@@ -133,8 +132,8 @@ def prodigal_binary_available() -> bool:
     return shutil.which("prodigal") is not None
 
 
-def _parse_gff_attributes(attr_col: str) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def _parse_gff_attributes(attr_col: str) -> dict[str, str]:
+    out: dict[str, str] = {}
     for part in attr_col.split(";"):
         part = part.strip()
         if not part or "=" not in part:
@@ -151,16 +150,15 @@ def _reverse_complement(sequence: str) -> str:
 
 def genes_from_prodigal_gff(
     gff_text: str,
-    contig_sequences: Optional[Dict[str, str]] = None,
-) -> Tuple[List[GenePrediction], List[Dict[str, Any]]]:
-    """
-    Parse Prodigal GFF3 (``-f gff``) CDS rows into :class:`GenePrediction` records.
+    contig_sequences: dict[str, str] | None = None,
+) -> tuple[list[GenePrediction], list[dict[str, Any]]]:
+    """Parse Prodigal GFF3 (``-f gff``) CDS rows into :class:`GenePrediction` records.
 
     When ``contig_sequences`` is provided (record id -> uppercased sequence), fills
     ``nucleotide_seq`` for each CDS; ``protein_seq`` prefers the ``translation=`` attribute.
     """
-    predictions: List[GenePrediction] = []
-    order: List[str] = []
+    predictions: list[GenePrediction] = []
+    order: list[str] = []
     seen_contig: set[str] = set()
 
     for raw in gff_text.splitlines():
@@ -190,10 +188,8 @@ def genes_from_prodigal_gff(
             except ValueError:
                 score = 0.0
         if score == 0.0 and "confidence" in attrs:
-            try:
+            with contextlib.suppress(ValueError):
                 score = float(attrs["confidence"])
-            except ValueError:
-                pass
 
         gid = attrs.get("ID") or f"{contig}_cds_{len(predictions)}"
         protein_seq = attrs.get("translation", "").strip()
@@ -231,7 +227,7 @@ def genes_from_prodigal_gff(
             order.append(contig)
 
     predictions.sort(key=lambda g: (g.contig, g.start, g.end))
-    counts: Dict[str, int] = defaultdict(int)
+    counts: dict[str, int] = defaultdict(int)
     for g in predictions:
         counts[g.contig] += 1
     per_contig = [{"contig_id": cid, "n_genes": counts[cid]} for cid in order]
@@ -253,14 +249,14 @@ def run_prodigal_cli(fasta_path: Path, meta: bool = False) -> str:
 
 
 def annotate_fasta_path(
-    fasta_path: Union[str, Path],
+    fasta_path: str | Path,
     predictor: str = "prodigal",
     include_sequences: bool = False,
-    gff_output: Optional[Union[str, Path]] = None,
+    gff_output: str | Path | None = None,
     use_prodigal_binary: bool = False,
     prodigal_meta_mode: bool = False,
     **predictor_kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Parse a FASTA file and run gene prediction on each record."""
     path = Path(fasta_path)
 
@@ -272,7 +268,7 @@ def annotate_fasta_path(
             out = Path(gff_output)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(gff_text, encoding="utf-8")
-        contig_seqs: Optional[Dict[str, str]] = None
+        contig_seqs: dict[str, str] | None = None
         if include_sequences:
             contig_seqs = {}
             for record in FastaParser().parse(path):
@@ -292,9 +288,9 @@ def annotate_fasta_path(
         }
 
     parser = FastaParser()
-    all_predictions: List[GenePrediction] = []
-    gff_lines: List[str] = ["##gff-version 3"]
-    per_contig: List[Dict[str, Any]] = []
+    all_predictions: list[GenePrediction] = []
+    gff_lines: list[str] = ["##gff-version 3"]
+    per_contig: list[dict[str, Any]] = []
 
     for record in parser.parse(path):
         seq = record.sequence.upper().replace(" ", "").replace("\n", "")
@@ -324,13 +320,12 @@ def annotate_fasta_path(
 
 
 def integration_gene_annotation_summary(
-    fasta_path: Union[str, Path],
+    fasta_path: str | Path,
     predictor: str = "prodigal",
     max_genes_listed: int = 500,
     **predictor_kwargs: Any,
-) -> Dict[str, Any]:
-    """
-    Lightweight gene annotation block for multi-omics integration results.
+) -> dict[str, Any]:
+    """Lightweight gene annotation block for multi-omics integration results.
 
     Omits full GFF in the returned dict when very large; callers may write GFF via annotate_fasta_path.
     """

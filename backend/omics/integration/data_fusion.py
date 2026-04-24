@@ -1,14 +1,13 @@
-"""
-Multi-Omics Data Fusion Methods
-"""
+"""Multi-Omics Data Fusion Methods."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 from backend.omics.base.omics_base import OmicsData
 
@@ -16,36 +15,37 @@ from backend.omics.base.omics_base import OmicsData
 @dataclass
 class FusionResult:
     """Result of multi-omics data fusion."""
+
     fused_data: np.ndarray
-    sample_names: List[str]
-    feature_names: List[str]
+    sample_names: list[str]
+    feature_names: list[str]
     method: str
-    metadata: Dict[str, Any]
-    omics_contributions: Optional[Dict[str, float]] = None
-    
+    metadata: dict[str, Any]
+    omics_contributions: dict[str, float] | None = None
+
     def to_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame(self.fused_data, index=self.sample_names, columns=self.feature_names)
 
 
 class DataFusion(ABC):
     """Abstract base class for data fusion methods."""
-    
+
     @abstractmethod
-    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "DataFusion":
+    def fit(self, datasets: dict[str, OmicsData], **kwargs) -> "DataFusion":
         """Fit the fusion model."""
         pass
-    
+
     @abstractmethod
-    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+    def transform(self, datasets: dict[str, OmicsData]) -> FusionResult:
         """Transform and fuse datasets."""
         pass
-    
-    def fit_transform(self, datasets: Dict[str, OmicsData], **kwargs) -> FusionResult:
+
+    def fit_transform(self, datasets: dict[str, OmicsData], **kwargs) -> FusionResult:
         """Fit and transform."""
         self.fit(datasets, **kwargs)
         return self.transform(datasets)
-    
-    def _align_samples(self, datasets: Dict[str, OmicsData]) -> Dict[str, pd.DataFrame]:
+
+    def _align_samples(self, datasets: dict[str, OmicsData]) -> dict[str, pd.DataFrame]:
         """Align samples across datasets."""
         # Find common samples
         common_samples = None
@@ -55,9 +55,9 @@ class DataFusion(ABC):
                 common_samples = samples
             else:
                 common_samples = common_samples.intersection(samples)
-        
-        common_samples = sorted(list(common_samples))
-        
+
+        common_samples = sorted(common_samples)
+
         # Align each dataset
         aligned = {}
         for name, data in datasets.items():
@@ -65,51 +65,50 @@ class DataFusion(ABC):
             if not isinstance(df.index, pd.Index) or list(df.index) != data.sample_names:
                 df.index = data.sample_names
             aligned[name] = df.loc[common_samples]
-        
+
         return aligned
 
 
 class EarlyFusion(DataFusion):
-    """
-    Early fusion (feature concatenation).
-    
+    """Early fusion (feature concatenation).
+
     Concatenates features from multiple omics datasets after normalization.
     """
-    
+
     def __init__(
         self,
         normalize: bool = True,
         scale: bool = True,
-        reduce_dim: Optional[int] = None,
+        reduce_dim: int | None = None,
     ):
         self.normalize = normalize
         self.scale = scale
         self.reduce_dim = reduce_dim
-        self.scalers: Dict[str, StandardScaler] = {}
-        self.pca: Optional[PCA] = None
-    
-    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "EarlyFusion":
+        self.scalers: dict[str, StandardScaler] = {}
+        self.pca: PCA | None = None
+
+    def fit(self, datasets: dict[str, OmicsData], **kwargs) -> "EarlyFusion":
         """Fit scalers for each dataset."""
         aligned = self._align_samples(datasets)
-        
+
         if self.scale:
             for name, df in aligned.items():
                 scaler = StandardScaler()
                 scaler.fit(df.values)
                 self.scalers[name] = scaler
-        
+
         # Fit PCA if dimensionality reduction requested
         if self.reduce_dim:
             concatenated = self._concatenate(aligned, scale=self.scale)
             self.pca = PCA(n_components=self.reduce_dim)
             self.pca.fit(concatenated)
-        
+
         return self
-    
-    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+
+    def transform(self, datasets: dict[str, OmicsData]) -> FusionResult:
         """Concatenate and transform datasets."""
         aligned = self._align_samples(datasets)
-        
+
         # Scale if fitted
         if self.scale and self.scalers:
             for name, df in aligned.items():
@@ -119,21 +118,21 @@ class EarlyFusion(DataFusion):
                         index=df.index,
                         columns=df.columns,
                     )
-        
+
         # Concatenate
         fused = self._concatenate(aligned, scale=False)
         sample_names = list(aligned.values())[0].index.tolist()
-        
+
         # Build feature names with omics prefix
         feature_names = []
         for name, df in aligned.items():
             feature_names.extend([f"{name}_{f}" for f in df.columns])
-        
+
         # Apply PCA if fitted
         if self.pca:
             fused = self.pca.transform(fused)
             feature_names = [f"PC{i+1}" for i in range(fused.shape[1])]
-        
+
         return FusionResult(
             fused_data=fused,
             sample_names=sample_names,
@@ -145,8 +144,8 @@ class EarlyFusion(DataFusion):
                 "dimensionality_reduced": self.pca is not None,
             },
         )
-    
-    def _concatenate(self, aligned: Dict[str, pd.DataFrame], scale: bool = True) -> np.ndarray:
+
+    def _concatenate(self, aligned: dict[str, pd.DataFrame], scale: bool = True) -> np.ndarray:
         """Concatenate aligned dataframes."""
         arrays = []
         for name, df in aligned.items():
@@ -158,12 +157,11 @@ class EarlyFusion(DataFusion):
 
 
 class IntermediateFusion(DataFusion):
-    """
-    Intermediate fusion using joint dimensionality reduction.
-    
+    """Intermediate fusion using joint dimensionality reduction.
+
     Methods: PCA, MOFA-like decomposition
     """
-    
+
     def __init__(
         self,
         method: str = "pca",
@@ -174,45 +172,43 @@ class IntermediateFusion(DataFusion):
         self.n_components = n_components
         self.random_state = random_state
         self.model = None
-        self.scalers: Dict[str, StandardScaler] = {}
-    
-    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "IntermediateFusion":
+        self.scalers: dict[str, StandardScaler] = {}
+
+    def fit(self, datasets: dict[str, OmicsData], **kwargs) -> "IntermediateFusion":
         """Fit the intermediate fusion model."""
         aligned = self._align_samples(datasets)
-        
+
         # Scale each omics
         for name, df in aligned.items():
             scaler = StandardScaler()
             scaler.fit(df.values)
             self.scalers[name] = scaler
-        
+
         # Concatenate and fit model
-        concatenated = np.hstack([
-            self.scalers[name].transform(df.values)
-            for name, df in aligned.items()
-        ])
-        
+        concatenated = np.hstack(
+            [self.scalers[name].transform(df.values) for name, df in aligned.items()]
+        )
+
         if self.method == "pca":
             n_comp = min(self.n_components, concatenated.shape[0], concatenated.shape[1])
             self.model = PCA(n_components=n_comp, random_state=self.random_state)
             self.model.fit(concatenated)
-        
+
         return self
-    
-    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+
+    def transform(self, datasets: dict[str, OmicsData]) -> FusionResult:
         """Transform using the fitted model."""
         aligned = self._align_samples(datasets)
         sample_names = list(aligned.values())[0].index.tolist()
-        
+
         # Scale and concatenate
-        concatenated = np.hstack([
-            self.scalers[name].transform(df.values)
-            for name, df in aligned.items()
-        ])
-        
+        concatenated = np.hstack(
+            [self.scalers[name].transform(df.values) for name, df in aligned.items()]
+        )
+
         # Transform
         fused = self.model.transform(concatenated)
-        
+
         return FusionResult(
             fused_data=fused,
             sample_names=sample_names,
@@ -220,33 +216,35 @@ class IntermediateFusion(DataFusion):
             method=f"intermediate_{self.method}",
             metadata={
                 "n_omics": len(datasets),
-                "variance_explained": self.model.explained_variance_ratio_.tolist() if hasattr(self.model, "explained_variance_ratio_") else None,
+                "variance_explained": (
+                    self.model.explained_variance_ratio_.tolist()
+                    if hasattr(self.model, "explained_variance_ratio_")
+                    else None
+                ),
             },
         )
 
 
 class LateFusion(DataFusion):
-    """
-    Late fusion using ensemble of omics-specific predictions.
-    
+    """Late fusion using ensemble of omics-specific predictions.
+
     Combines predictions from models trained on each omics type.
     """
-    
+
     def __init__(
         self,
         aggregation: str = "mean",
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
     ):
         self.aggregation = aggregation
         self.weights = weights
-    
-    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "LateFusion":
+
+    def fit(self, datasets: dict[str, OmicsData], **kwargs) -> "LateFusion":
         """No fitting needed for late fusion."""
         return self
-    
-    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
-        """
-        Combine omics-specific signals without pre-trained predictors.
+
+    def transform(self, datasets: dict[str, OmicsData]) -> FusionResult:
+        """Combine omics-specific signals without pre-trained predictors.
 
         When only raw matrices are available, each block is scaled and reduced with PCA,
         then latent scores are concatenated (a common multi-view baseline). For true
@@ -263,8 +261,8 @@ class LateFusion(DataFusion):
             )
 
         sample_names = list(next(iter(aligned.values())).index)
-        blocks: List[np.ndarray] = []
-        feature_names: List[str] = []
+        blocks: list[np.ndarray] = []
+        feature_names: list[str] = []
 
         for name, df in aligned.items():
             X = StandardScaler().fit_transform(df.values.astype(float))
@@ -292,25 +290,25 @@ class LateFusion(DataFusion):
             },
             omics_contributions=self.weights,
         )
-    
+
     def fuse_predictions(
         self,
-        predictions: Dict[str, np.ndarray],
-        sample_names: List[str],
+        predictions: dict[str, np.ndarray],
+        sample_names: list[str],
     ) -> FusionResult:
-        """
-        Fuse predictions from multiple omics models.
-        
+        """Fuse predictions from multiple omics models.
+
         Args:
             predictions: Dict mapping omics name to prediction array
             sample_names: Sample names
-        
+
         Returns:
             FusionResult with fused predictions
+
         """
         # Stack predictions
         pred_arrays = list(predictions.values())
-        
+
         # Apply weights
         if self.weights:
             weighted = []
@@ -318,10 +316,10 @@ class LateFusion(DataFusion):
                 w = self.weights.get(name, 1.0)
                 weighted.append(pred * w)
             pred_arrays = weighted
-        
+
         # Aggregate
         stacked = np.stack(pred_arrays, axis=-1)
-        
+
         if self.aggregation == "mean":
             fused = np.mean(stacked, axis=-1)
         elif self.aggregation == "max":
@@ -335,7 +333,7 @@ class LateFusion(DataFusion):
             )
         else:
             fused = np.mean(stacked, axis=-1)
-        
+
         return FusionResult(
             fused_data=fused.reshape(-1, 1) if len(fused.shape) == 1 else fused,
             sample_names=sample_names,

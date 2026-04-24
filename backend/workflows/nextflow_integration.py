@@ -1,32 +1,31 @@
-"""
-Nextflow Integration Module
+"""Nextflow Integration Module.
 ===========================
 
 Run and manage Nextflow pipelines for bioinformatics workflows.
 """
 
 import asyncio
-import subprocess
-import json
 import logging
-from dataclasses import dataclass, field
+import subprocess
+import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import tempfile
-import shutil
+from typing import Any
 
 
 def utc_now() -> datetime:
     """Return current UTC time."""
     return datetime.now(timezone.utc)
 
+
 logger = logging.getLogger(__name__)
 
 
 class PipelineStatus(str, Enum):
     """Nextflow pipeline execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -37,11 +36,12 @@ class PipelineStatus(str, Enum):
 @dataclass
 class NextflowConfig:
     """Configuration for Nextflow execution."""
+
     nextflow_path: str = "nextflow"
-    work_dir: Optional[Path] = None
-    output_dir: Optional[Path] = None
-    config_file: Optional[Path] = None
-    profile: Optional[str] = None
+    work_dir: Path | None = None
+    output_dir: Path | None = None
+    config_file: Path | None = None
+    profile: str | None = None
     resume: bool = False
     with_report: bool = True
     with_timeline: bool = True
@@ -54,53 +54,53 @@ class NextflowConfig:
 @dataclass
 class PipelineResult:
     """Result from a Nextflow pipeline run."""
+
     pipeline: str
     status: PipelineStatus
     exit_code: int
     duration_seconds: float
-    output_dir: Optional[Path]
-    log_file: Optional[Path]
-    report_file: Optional[Path]
+    output_dir: Path | None
+    log_file: Path | None
+    report_file: Path | None
     stdout: str
     stderr: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
     started_at: datetime
     completed_at: datetime
 
 
 class NextflowPipeline:
-    """
-    Represents a Nextflow pipeline.
-    
+    """Represents a Nextflow pipeline.
+
     Can be a local file, GitHub repository, or nf-core pipeline.
     """
-    
+
     def __init__(
         self,
         name: str,
         source: str,  # Path, GitHub URL, or nf-core pipeline name
-        revision: Optional[str] = None,
+        revision: str | None = None,
         description: str = "",
     ):
-        """
-        Initialize Nextflow pipeline.
-        
+        """Initialize Nextflow pipeline.
+
         Args:
             name: Pipeline name
             source: Pipeline source (path, URL, or nf-core name)
             revision: Git revision/branch/tag
             description: Pipeline description
+
         """
         self.name = name
         self.source = source
         self.revision = revision
         self.description = description
-    
+
     @property
     def is_nfcore(self) -> bool:
         """Check if this is an nf-core pipeline."""
         return self.source.startswith("nf-core/")
-    
+
     @property
     def is_local(self) -> bool:
         """Check if this is a local pipeline."""
@@ -110,59 +110,48 @@ class NextflowPipeline:
 # Pre-defined nf-core pipelines
 NFCORE_PIPELINES = {
     "rnaseq": NextflowPipeline(
-        "nf-core/rnaseq",
-        "nf-core/rnaseq",
-        description="RNA sequencing analysis pipeline"
+        "nf-core/rnaseq", "nf-core/rnaseq", description="RNA sequencing analysis pipeline"
     ),
     "sarek": NextflowPipeline(
         "nf-core/sarek",
         "nf-core/sarek",
-        description="Analysis pipeline for WGS/WES/targeted sequencing"
+        description="Analysis pipeline for WGS/WES/targeted sequencing",
     ),
     "methylseq": NextflowPipeline(
-        "nf-core/methylseq",
-        "nf-core/methylseq",
-        description="Methylation analysis pipeline"
+        "nf-core/methylseq", "nf-core/methylseq", description="Methylation analysis pipeline"
     ),
     "atacseq": NextflowPipeline(
-        "nf-core/atacseq",
-        "nf-core/atacseq",
-        description="ATAC-seq analysis pipeline"
+        "nf-core/atacseq", "nf-core/atacseq", description="ATAC-seq analysis pipeline"
     ),
     "chipseq": NextflowPipeline(
-        "nf-core/chipseq",
-        "nf-core/chipseq",
-        description="ChIP-seq analysis pipeline"
+        "nf-core/chipseq", "nf-core/chipseq", description="ChIP-seq analysis pipeline"
     ),
     "scrnaseq": NextflowPipeline(
-        "nf-core/scrnaseq",
-        "nf-core/scrnaseq",
-        description="Single-cell RNA-seq analysis pipeline"
+        "nf-core/scrnaseq", "nf-core/scrnaseq", description="Single-cell RNA-seq analysis pipeline"
     ),
 }
 
 
 class NextflowRunner:
-    """
-    Execute and manage Nextflow pipelines.
-    
+    """Execute and manage Nextflow pipelines.
+
     Provides:
     - Pipeline execution with parameter management
     - Progress monitoring
     - Log capture
     - Resource management
     """
-    
-    def __init__(self, config: Optional[NextflowConfig] = None):
-        """
-        Initialize Nextflow runner.
-        
+
+    def __init__(self, config: NextflowConfig | None = None):
+        """Initialize Nextflow runner.
+
         Args:
             config: Nextflow configuration
+
         """
         self.config = config or NextflowConfig()
-        self._processes: Dict[str, subprocess.Popen] = {}
-    
+        self._processes: dict[str, subprocess.Popen] = {}
+
     def _check_nextflow(self) -> bool:
         """Check if Nextflow is installed."""
         try:
@@ -174,75 +163,78 @@ class NextflowRunner:
             return result.returncode == 0
         except FileNotFoundError:
             return False
-    
+
     async def run_pipeline(
         self,
         pipeline: NextflowPipeline,
-        params: Dict[str, Any],
-        run_name: Optional[str] = None,
-        callback: Optional[callable] = None,
+        params: dict[str, Any],
+        run_name: str | None = None,
+        callback: callable | None = None,
     ) -> PipelineResult:
-        """
-        Run a Nextflow pipeline.
-        
+        """Run a Nextflow pipeline.
+
         Args:
             pipeline: Pipeline to run
             params: Pipeline parameters
             run_name: Optional run name
             callback: Progress callback function
-            
+
         Returns:
             PipelineResult
+
         """
         if not self._check_nextflow():
             raise RuntimeError("Nextflow is not installed or not in PATH")
-        
+
         started_at = utc_now()
         run_name = run_name or f"{pipeline.name}_{started_at.strftime('%Y%m%d_%H%M%S')}"
-        
+
         # Setup directories
         work_dir = self.config.work_dir or Path(tempfile.mkdtemp())
         output_dir = self.config.output_dir or work_dir / "results"
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Build command
         cmd = [
             self.config.nextflow_path,
             "run",
             pipeline.source,
-            "-name", run_name,
-            "-work-dir", str(work_dir),
-            "--outdir", str(output_dir),
+            "-name",
+            run_name,
+            "-work-dir",
+            str(work_dir),
+            "--outdir",
+            str(output_dir),
         ]
-        
+
         # Add revision
         if pipeline.revision:
             cmd.extend(["-r", pipeline.revision])
-        
+
         # Add profile
         if self.config.profile:
             cmd.extend(["-profile", self.config.profile])
-        
+
         # Add config file
         if self.config.config_file:
             cmd.extend(["-c", str(self.config.config_file)])
-        
+
         # Add resume flag
         if self.config.resume:
             cmd.append("-resume")
-        
+
         # Add reporting
         report_file = None
         if self.config.with_report:
             report_file = output_dir / f"{run_name}_report.html"
             cmd.extend(["-with-report", str(report_file)])
-        
+
         if self.config.with_timeline:
             cmd.extend(["-with-timeline", str(output_dir / f"{run_name}_timeline.html")])
-        
+
         if self.config.with_dag:
             cmd.extend(["-with-dag", str(output_dir / f"{run_name}_dag.svg")])
-        
+
         # Add parameters
         for key, value in params.items():
             if isinstance(value, bool):
@@ -250,12 +242,12 @@ class NextflowRunner:
                     cmd.append(f"--{key}")
             else:
                 cmd.extend([f"--{key}", str(value)])
-        
+
         # Run pipeline
         logger.info(f"Running Nextflow pipeline: {' '.join(cmd)}")
-        
+
         log_file = output_dir / f"{run_name}.log"
-        
+
         try:
             with open(log_file, "w") as log:
                 process = await asyncio.create_subprocess_exec(
@@ -264,22 +256,22 @@ class NextflowRunner:
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(work_dir),
                 )
-                
+
                 self._processes[run_name] = process
-                
+
                 stdout, stderr = await process.communicate()
-                
+
                 # Write to log
                 log.write(stdout.decode())
                 if stderr:
                     log.write("\n--- STDERR ---\n")
                     log.write(stderr.decode())
-            
+
             completed_at = utc_now()
             duration = (completed_at - started_at).total_seconds()
-            
+
             status = PipelineStatus.COMPLETED if process.returncode == 0 else PipelineStatus.FAILED
-            
+
             return PipelineResult(
                 pipeline=pipeline.name,
                 status=status,
@@ -294,7 +286,7 @@ class NextflowRunner:
                 started_at=started_at,
                 completed_at=completed_at,
             )
-            
+
         except Exception as e:
             logger.error(f"Pipeline execution failed: {e}")
             return PipelineResult(
@@ -314,25 +306,21 @@ class NextflowRunner:
         finally:
             if run_name in self._processes:
                 del self._processes[run_name]
-    
+
     async def run_rnaseq(
-        self,
-        input_dir: Path,
-        genome: str = "GRCh38",
-        aligner: str = "star_salmon",
-        **kwargs
+        self, input_dir: Path, genome: str = "GRCh38", aligner: str = "star_salmon", **kwargs
     ) -> PipelineResult:
-        """
-        Run nf-core/rnaseq pipeline.
-        
+        """Run nf-core/rnaseq pipeline.
+
         Args:
             input_dir: Input directory with FASTQ files
             genome: Reference genome
             aligner: Alignment tool
             **kwargs: Additional parameters
-            
+
         Returns:
             PipelineResult
+
         """
         params = {
             "input": str(input_dir / "samplesheet.csv"),
@@ -343,27 +331,23 @@ class NextflowRunner:
             "max_time": self.config.max_time,
             **kwargs,
         }
-        
+
         return await self.run_pipeline(NFCORE_PIPELINES["rnaseq"], params)
-    
+
     async def run_sarek(
-        self,
-        input_dir: Path,
-        genome: str = "GATK.GRCh38",
-        tools: Optional[List[str]] = None,
-        **kwargs
+        self, input_dir: Path, genome: str = "GATK.GRCh38", tools: list[str] | None = None, **kwargs
     ) -> PipelineResult:
-        """
-        Run nf-core/sarek pipeline for variant calling.
-        
+        """Run nf-core/sarek pipeline for variant calling.
+
         Args:
             input_dir: Input directory
             genome: Reference genome
             tools: Analysis tools to run
             **kwargs: Additional parameters
-            
+
         Returns:
             PipelineResult
+
         """
         params = {
             "input": str(input_dir / "samplesheet.csv"),
@@ -373,9 +357,9 @@ class NextflowRunner:
             "max_cpus": self.config.max_cpus,
             **kwargs,
         }
-        
+
         return await self.run_pipeline(NFCORE_PIPELINES["sarek"], params)
-    
+
     def cancel_pipeline(self, run_name: str) -> bool:
         """Cancel a running pipeline."""
         if run_name in self._processes:
@@ -383,7 +367,7 @@ class NextflowRunner:
             process.terminate()
             return True
         return False
-    
-    def list_running(self) -> List[str]:
+
+    def list_running(self) -> list[str]:
         """List running pipeline names."""
         return list(self._processes.keys())

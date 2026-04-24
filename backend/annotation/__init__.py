@@ -1,45 +1,44 @@
-"""
-Genome Annotation Module
+"""Genome Annotation Module.
 ========================
 
 Comprehensive genome annotation including gene prediction, functional
 annotation, and structural annotation.
 """
 
+from .comparative import (
+    GeneCluster,
+    OrthologFinder,
+    SyntenyAnalyzer,
+)
+from .functional import (
+    BlastAnnotator,
+    COGAnnotator,
+    ECNumberAnnotator,
+    FunctionalAnnotation,
+    FunctionalAnnotator,
+    GOAnnotator,
+    HMMAnnotator,
+    InterProAnnotator,
+    KEGGAnnotator,
+)
 from .gene_prediction import (
+    AugustusPredictor,
     GenePrediction,
     GenePredictor,
-    ProdigalPredictor,
-    AugustusPredictor,
     GlimmerPredictor,
     MetaGenePredictor,
     ORFFinder,
-)
-from .functional import (
-    FunctionalAnnotation,
-    FunctionalAnnotator,
-    BlastAnnotator,
-    HMMAnnotator,
-    InterProAnnotator,
-    GOAnnotator,
-    KEGGAnnotator,
-    COGAnnotator,
-    ECNumberAnnotator,
+    ProdigalPredictor,
 )
 from .structural import (
-    StructuralAnnotation,
-    RepeatFinder,
-    tRNAScanner,
-    rRNAFinder,
-    ncRNAFinder,
     CRISPRFinder,
     PromoterFinder,
+    RepeatFinder,
+    StructuralAnnotation,
     TerminatorFinder,
-)
-from .comparative import (
-    SyntenyAnalyzer,
-    OrthologFinder,
-    GeneCluster,
+    ncRNAFinder,
+    rRNAFinder,
+    tRNAScanner,
 )
 
 __all__ = [

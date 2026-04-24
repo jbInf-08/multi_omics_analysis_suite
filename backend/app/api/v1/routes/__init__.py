@@ -1,18 +1,16 @@
-"""
-API v1 Routes
-"""
+"""API v1 Routes."""
 
 from fastapi import APIRouter
 
-from backend.app.api.v1.routes.auth import router as auth_router
-from backend.app.api.v1.routes.users import router as users_router
-from backend.app.api.v1.routes.projects import router as projects_router
-from backend.app.api.v1.routes.datasets import router as datasets_router
 from backend.app.api.v1.routes.analyses import router as analyses_router
+from backend.app.api.v1.routes.auth import router as auth_router
+from backend.app.api.v1.routes.bioinformatics_tools import router as bioinformatics_tools_router
+from backend.app.api.v1.routes.datasets import router as datasets_router
+from backend.app.api.v1.routes.ml import router as ml_router
 from backend.app.api.v1.routes.omics import router as omics_router
 from backend.app.api.v1.routes.pipelines import router as pipelines_router
-from backend.app.api.v1.routes.ml import router as ml_router
-from backend.app.api.v1.routes.bioinformatics_tools import router as bioinformatics_tools_router
+from backend.app.api.v1.routes.projects import router as projects_router
+from backend.app.api.v1.routes.users import router as users_router
 
 api_router = APIRouter()
 

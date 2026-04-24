@@ -1,5 +1,4 @@
-"""
-Genome Assembly Module
+"""Genome Assembly Module.
 ======================
 
 Comprehensive genome assembly tools for de novo assembly,
@@ -7,20 +6,18 @@ reference-guided assembly, scaffolding, and assembly quality assessment.
 """
 
 from .assemblers import (
-    Contig,
-    AssemblyResult,
     AssemblyGraph,
-    DeNovoAssembler,
+    AssemblyResult,
+    Contig,
     DeBruijnAssembler,
+    DeNovoAssembler,
+    HybridAssembler,
     OverlapLayoutConsensus,
     ReferenceGuidedAssembler,
-    HybridAssembler,
 )
-from .scaffolding import (
-    Scaffold,
-    ScaffoldGraph,
-    Scaffolder,
-    GapFiller,
+from .graph import (
+    ContigGraph,
+    UnitGraph,
 )
 from .polishing import (
     ConsensusPolisher,
@@ -29,13 +26,15 @@ from .polishing import (
 )
 from .quality import (
     AssemblyQC,
-    QUASTResult,
     BUSCOAnalysis,
     ContigStatistics,
+    QUASTResult,
 )
-from .graph import (
-    ContigGraph,
-    UnitGraph,
+from .scaffolding import (
+    GapFiller,
+    Scaffold,
+    Scaffolder,
+    ScaffoldGraph,
 )
 
 __all__ = [

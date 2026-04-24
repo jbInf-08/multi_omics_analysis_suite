@@ -1,12 +1,10 @@
-"""
-Spill large Celery pipeline step payloads to disk; keep compact summaries for JSON columns.
-"""
+"""Spill large Celery pipeline step payloads to disk; keep compact summaries for JSON columns."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from backend.app.core.config import settings
 
@@ -14,11 +12,10 @@ from backend.app.core.config import settings
 def persist_pipeline_step_output(
     run_id: str,
     step_index: int,
-    step_type: Optional[str],
-    payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """
-    If ``payload`` serializes larger than ``PIPELINE_ARTIFACT_MAX_EMBED_BYTES``, write the full
+    step_type: str | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """If ``payload`` serializes larger than ``PIPELINE_ARTIFACT_MAX_EMBED_BYTES``, write the full
     JSON under ``PIPELINE_ARTIFACTS_DIR/<run_id>/`` and return a stub with paths and counts.
     """
     max_bytes = int(settings.PIPELINE_ARTIFACT_MAX_EMBED_BYTES)
@@ -35,7 +32,7 @@ def persist_pipeline_step_output(
     json_path = base / f"{stem}.json"
     json_path.write_text(raw, encoding="utf-8")
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "_artifact": True,
         "artifact_json": str(json_path.resolve()),
         "artifact_bytes": len(encoded),

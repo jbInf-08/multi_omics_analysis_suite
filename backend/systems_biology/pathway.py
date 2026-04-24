@@ -1,5 +1,4 @@
-"""
-Pathway-level helpers for systems biology (curated sets + visualization hooks).
+"""Pathway-level helpers for systems biology (curated sets + visualization hooks).
 
 For large-scale KEGG/Reactome queries, integrate external services or
 ``backend.analysis.pathway_analysis`` as needed.
@@ -7,9 +6,10 @@ For large-scale KEGG/Reactome queries, integrate external services or
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any
 
 try:
     from backend.omics._pathway_reference import (
@@ -20,7 +20,7 @@ try:
 except ImportError:  # pragma: no cover
     PATHWAY_GENE_SETS = {}
 
-    def pathway_sets_for_entity(entity: str) -> Dict[str, List[str]]:  # noqa: ARG001
+    def pathway_sets_for_entity(entity: str) -> dict[str, list[str]]:  # noqa: ARG001
         return {}
 
     hypergeom_enrichment = None
@@ -44,7 +44,7 @@ class Pathway:
     members: frozenset[str] = field(default_factory=frozenset)
 
     @classmethod
-    def from_curated_key(cls, key: str) -> "Pathway":
+    def from_curated_key(cls, key: str) -> Pathway:
         genes = PATHWAY_GENE_SETS.get(key, [])
         return cls(pathway_id=key, name=key.replace("_", " "), members=frozenset(genes))
 
@@ -58,10 +58,10 @@ class PathwayEnrichment:
     def enrich(
         self,
         query_genes: Iterable[str],
-        universe: Optional[Set[str]] = None,
+        universe: set[str] | None = None,
         entity: str = "gene",
         max_p: float = 0.05,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if hypergeom_enrichment is None:
             return []
 
@@ -88,10 +88,10 @@ class PathwayVisualization:
     @staticmethod
     def cytoscape_elements(
         pathway: Pathway,
-        edges: Optional[List[Tuple[str, str]]] = None,
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        edges: list[tuple[str, str]] | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
         nodes = [{"data": {"id": m, "label": m}} for m in sorted(pathway.members)]
-        el_edges: List[Dict[str, Any]] = []
+        el_edges: list[dict[str, Any]] = []
         for i, (a, b) in enumerate(edges or []):
             if a in pathway.members and b in pathway.members:
                 el_edges.append({"data": {"id": f"e{i}", "source": a, "target": b}})
@@ -99,15 +99,14 @@ class PathwayVisualization:
 
 
 class MetabolicFluxAnalysis:
-    """
-    Minimal flux-balance scaffold: maximize (or set) a linear objective
+    """Minimal flux-balance scaffold: maximize (or set) a linear objective
     subject to ``S v = 0``, ``v >= 0``.
 
     Full genome-scale models are better handled with COBRApy; this stays
     dependency-light with SciPy ``linprog`` when available.
     """
 
-    def __init__(self, stoichiometry: Any, flux_bounds: Optional[List[Tuple[float, float]]] = None):
+    def __init__(self, stoichiometry: Any, flux_bounds: list[tuple[float, float]] | None = None):
         import numpy as np
 
         self.S = np.asarray(stoichiometry, dtype=float)
@@ -115,9 +114,9 @@ class MetabolicFluxAnalysis:
 
     def flux_balance(
         self,
-        objective: Optional[Any] = None,
+        objective: Any | None = None,
         maximize: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         import numpy as np
 
         try:
@@ -145,7 +144,7 @@ class MetabolicFluxAnalysis:
             c = -c
 
         if self.flux_bounds is None:
-            bounds: List[Tuple[Optional[float], Optional[float]]] = [(0.0, None)] * n
+            bounds: list[tuple[float | None, float | None]] = [(0.0, None)] * n
         else:
             if len(self.flux_bounds) != n:
                 return {"success": False, "status": "bounds_length", "fluxes": None}

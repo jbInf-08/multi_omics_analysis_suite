@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Set
-
-PATHWAY_GENE_SETS: Dict[str, List[str]] = {
+PATHWAY_GENE_SETS: dict[str, list[str]] = {
     "Cell_cycle": ["CDK1", "CCNB1", "CCNA2", "CDC20", "PLK1", "TOP2A", "MKI67", "PCNA"],
     "Immune_response": ["CD3E", "CD8A", "CD4", "CD19", "MS4A1", "CD14", "FCGR3A", "IL2RA"],
     "Apoptosis": ["CASP3", "CASP8", "BAX", "BCL2", "FAS", "TNF", "CYCS", "DIABLO"],
@@ -12,10 +10,10 @@ PATHWAY_GENE_SETS: Dict[str, List[str]] = {
     "DNA_repair": ["BRCA1", "BRCA2", "RAD51", "PARP1", "ATM", "ATR", "MLH1", "MSH2"],
 }
 
-PATHWAY_PROTEIN_SETS: Dict[str, List[str]] = {k: list(v) for k, v in PATHWAY_GENE_SETS.items()}
+PATHWAY_PROTEIN_SETS: dict[str, list[str]] = {k: list(v) for k, v in PATHWAY_GENE_SETS.items()}
 
 
-def pathway_sets_for_entity(entity: str) -> Dict[str, List[str]]:
+def pathway_sets_for_entity(entity: str) -> dict[str, list[str]]:
     entity = (entity or "gene").lower()
     if entity in ("protein", "proteomics"):
         return PATHWAY_PROTEIN_SETS
@@ -23,11 +21,11 @@ def pathway_sets_for_entity(entity: str) -> Dict[str, List[str]]:
 
 
 def hypergeom_enrichment(
-    query: Set[str],
-    background: Set[str],
-    gene_sets: Dict[str, List[str]],
+    query: set[str],
+    background: set[str],
+    gene_sets: dict[str, list[str]],
     max_p: float = 1.0,
-) -> List[Dict[str, float]]:
+) -> list[dict[str, float]]:
     """Fisher exact test (greater) for over-representation in a fixed background."""
     from scipy.stats import fisher_exact
 
@@ -39,7 +37,7 @@ def hypergeom_enrichment(
     if not Q:
         return []
 
-    results: List[Dict[str, float]] = []
+    results: list[dict[str, float]] = []
     for pathway, genes in gene_sets.items():
         P = set(genes) & U
         if len(P) < 2:
@@ -67,15 +65,13 @@ def hypergeom_enrichment(
 
 
 def preranked_gsea_like(
-    ranked_genes: List[str],
-    gene_ranks: List[float],
-    gene_sets: Dict[str, List[str]],
+    ranked_genes: list[str],
+    gene_ranks: list[float],
+    gene_sets: dict[str, list[str]],
     n_perm: int = 200,
     seed: int = 42,
-) -> List[Dict[str, float]]:
-    """
-    Rank-based enrichment: score = mean(rank in set) - mean(global rank), with permutation p.
-    """
+) -> list[dict[str, float]]:
+    """Rank-based enrichment: score = mean(rank in set) - mean(global rank), with permutation p."""
     import numpy as np
 
     if not ranked_genes or not gene_ranks or len(ranked_genes) != len(gene_ranks):
@@ -86,7 +82,7 @@ def preranked_gsea_like(
     scores = np.asarray(gene_ranks, dtype=float)
     n = len(genes)
 
-    def mean_rank_diff(gset: Set[str]) -> float:
+    def mean_rank_diff(gset: set[str]) -> float:
         idx = np.array([i for i, g in enumerate(genes) if g in gset], dtype=int)
         if idx.size == 0:
             return 0.0
@@ -96,11 +92,11 @@ def preranked_gsea_like(
         in_set = ranks[idx]
         return float(in_set.mean() - ranks.mean())
 
-    obs: Dict[str, float] = {}
+    obs: dict[str, float] = {}
     for name, lst in gene_sets.items():
         obs[name] = mean_rank_diff(set(lst))
 
-    counts = {k: 0 for k in obs}
+    counts = dict.fromkeys(obs, 0)
     for _ in range(n_perm):
         perm = rng.permutation(scores)
         order = np.argsort(-perm)
@@ -115,7 +111,7 @@ def preranked_gsea_like(
             if abs(sp) >= abs(obs.get(name, 0.0)):
                 counts[name] += 1
 
-    out: List[Dict[str, float]] = []
+    out: list[dict[str, float]] = []
     for name, sc in obs.items():
         p = (counts[name] + 1) / (n_perm + 1)
         out.append({"pathway": name, "enrichment_score": float(sc), "pvalue": float(p)})

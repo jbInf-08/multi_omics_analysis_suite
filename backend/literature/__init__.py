@@ -1,5 +1,4 @@
-"""
-Literature Mining Module
+"""Literature Mining Module.
 ========================
 
 Tools for mining scientific literature:
@@ -7,14 +6,14 @@ Tools for mining scientific literature:
 - Article management
 """
 
-from backend.literature.pubmed_scraper import (
-    PubMedScraper,
-    Article,
-    SearchResult,
-)
 from backend.literature.article_manager import (
-    ArticleManager,
     ArticleCollection,
+    ArticleManager,
+)
+from backend.literature.pubmed_scraper import (
+    Article,
+    PubMedScraper,
+    SearchResult,
 )
 
 __all__ = [

@@ -1,17 +1,15 @@
-"""
-Functional Annotation Module
+"""Functional Annotation Module.
 ============================
 
 Functional annotation using sequence similarity, domain analysis, and pathway mapping.
 """
 
+import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
-from collections import defaultdict
+
 import numpy as np
-import re
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -19,54 +17,56 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FunctionalAnnotation:
     """Functional annotation for a gene/protein."""
+
     gene_id: str
     product: str = "hypothetical protein"
     gene_name: str = ""
-    
+
     # Database references
     uniprot_id: str = ""
     refseq_id: str = ""
-    
+
     # Functional categories
-    go_terms: List[str] = field(default_factory=list)
-    ec_numbers: List[str] = field(default_factory=list)
-    kegg_orthology: List[str] = field(default_factory=list)
-    cog_categories: List[str] = field(default_factory=list)
-    pfam_domains: List[str] = field(default_factory=list)
-    interpro_domains: List[str] = field(default_factory=list)
-    
+    go_terms: list[str] = field(default_factory=list)
+    ec_numbers: list[str] = field(default_factory=list)
+    kegg_orthology: list[str] = field(default_factory=list)
+    cog_categories: list[str] = field(default_factory=list)
+    pfam_domains: list[str] = field(default_factory=list)
+    interpro_domains: list[str] = field(default_factory=list)
+
     # Pathway memberships
-    kegg_pathways: List[str] = field(default_factory=list)
-    reactome_pathways: List[str] = field(default_factory=list)
-    
+    kegg_pathways: list[str] = field(default_factory=list)
+    reactome_pathways: list[str] = field(default_factory=list)
+
     # Evidence
     evidence_code: str = "IEA"  # Inferred from Electronic Annotation
     confidence: float = 0.0
-    
+
     # Metadata
     source: str = ""
-    notes: List[str] = field(default_factory=list)
-    
-    def to_dict(self) -> Dict:
+    notes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
-            'gene_id': self.gene_id,
-            'product': self.product,
-            'gene_name': self.gene_name,
-            'GO': self.go_terms,
-            'EC': self.ec_numbers,
-            'KEGG': self.kegg_orthology,
-            'COG': self.cog_categories,
-            'Pfam': self.pfam_domains,
-            'InterPro': self.interpro_domains,
-            'pathways': self.kegg_pathways + self.reactome_pathways,
-            'confidence': self.confidence,
+            "gene_id": self.gene_id,
+            "product": self.product,
+            "gene_name": self.gene_name,
+            "GO": self.go_terms,
+            "EC": self.ec_numbers,
+            "KEGG": self.kegg_orthology,
+            "COG": self.cog_categories,
+            "Pfam": self.pfam_domains,
+            "InterPro": self.interpro_domains,
+            "pathways": self.kegg_pathways + self.reactome_pathways,
+            "confidence": self.confidence,
         }
 
 
 @dataclass
 class BlastHit:
     """BLAST search hit."""
+
     query_id: str
     subject_id: str
     identity: float
@@ -80,11 +80,11 @@ class BlastHit:
     evalue: float
     bit_score: float
     subject_description: str = ""
-    
+
     @classmethod
     def from_blast_line(cls, line: str) -> "BlastHit":
         """Parse from BLAST tabular output."""
-        fields = line.strip().split('\t')
+        fields = line.strip().split("\t")
         return cls(
             query_id=fields[0],
             subject_id=fields[1],
@@ -102,9 +102,10 @@ class BlastHit:
         )
 
 
-@dataclass 
+@dataclass
 class DomainHit:
     """Domain/motif search hit."""
+
     query_id: str
     domain_id: str
     domain_name: str
@@ -119,16 +120,16 @@ class DomainHit:
 
 class FunctionalAnnotator(ABC):
     """Abstract base class for functional annotators."""
-    
+
     @abstractmethod
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate protein sequences."""
         pass
 
 
 class BlastAnnotator(FunctionalAnnotator):
     """Annotate using BLAST similarity search."""
-    
+
     def __init__(
         self,
         database: str = "nr",
@@ -140,23 +141,23 @@ class BlastAnnotator(FunctionalAnnotator):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.coverage_cutoff = coverage_cutoff
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate sequences using BLAST-like similarity search."""
         logger.info(f"Annotating {len(sequences)} sequences with BLAST")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             # Simulate BLAST search (in practice would call BLAST)
             hits = self._search_database(sequence)
-            
+
             if hits:
                 best_hit = hits[0]
-                
+
                 # Extract product name from description
                 product = self._extract_product(best_hit.subject_description)
-                
+
                 annotations[seq_id] = FunctionalAnnotation(
                     gene_id=seq_id,
                     product=product,
@@ -171,12 +172,11 @@ class BlastAnnotator(FunctionalAnnotator):
                     confidence=0.0,
                     source="no_hit",
                 )
-        
+
         return annotations
-    
-    def _search_database(self, sequence: str) -> List[BlastHit]:
-        """
-        Local similarity search against a tiny bundled peptide library.
+
+    def _search_database(self, sequence: str) -> list[BlastHit]:
+        """Local similarity search against a tiny bundled peptide library.
 
         For production BLAST searches, call out to ``blastp``/cloud APIs instead.
         """
@@ -199,7 +199,7 @@ class BlastAnnotator(FunctionalAnnotator):
             return []
 
         aligner = GlobalAligner(scoring_matrix=ScoringMatrix("simple"))
-        hits: List[BlastHit] = []
+        hits: list[BlastHit] = []
         for subject_id, ref_aa, desc in reference:
             sub = ref_aa[: min(len(ref_aa), 400)]
             aln = aligner.align(q, sub)
@@ -227,25 +227,25 @@ class BlastAnnotator(FunctionalAnnotator):
             )
         hits.sort(key=lambda h: h.evalue)
         return hits[:5]
-    
+
     def _extract_product(self, description: str) -> str:
         """Extract product name from hit description."""
         # Remove organism info in brackets
-        product = re.sub(r'\s*\[.*?\]\s*$', '', description)
-        
+        product = re.sub(r"\s*\[.*?\]\s*$", "", description)
+
         # Remove accession-like prefixes
-        product = re.sub(r'^[A-Z]+_\d+\.\d+\s+', '', product)
-        
+        product = re.sub(r"^[A-Z]+_\d+\.\d+\s+", "", product)
+
         # Capitalize first letter
         if product:
             product = product[0].upper() + product[1:]
-        
+
         return product or "hypothetical protein"
 
 
 class HMMAnnotator(FunctionalAnnotator):
     """Annotate using HMM profile searches (Pfam, TIGRFAM, etc.)."""
-    
+
     def __init__(
         self,
         database: str = "Pfam",
@@ -256,34 +256,34 @@ class HMMAnnotator(FunctionalAnnotator):
         self.evalue_cutoff = evalue_cutoff
         self.use_gathering_threshold = use_gathering_threshold
         self.domain_info = self._load_domain_info()
-    
-    def _load_domain_info(self) -> Dict[str, Dict]:
+
+    def _load_domain_info(self) -> dict[str, dict]:
         """Curated Pfam-style domain summaries (subset; extend via external HMM DB in production)."""
         return {
             "PF00001": {"name": "Rhodopsin", "description": "7 transmembrane receptor"},
             "PF00069": {"name": "Pkinase", "description": "Protein kinase domain"},
             "PF00076": {"name": "RRM_1", "description": "RNA recognition motif"},
         }
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate sequences using HMM profile search."""
         logger.info(f"Annotating {len(sequences)} sequences with HMM profiles")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             hits = self._search_profiles(seq_id, sequence)
-            
+
             domains = []
             for hit in hits:
                 domain_info = self.domain_info.get(hit.domain_id, {})
                 domains.append(f"{hit.domain_id}:{domain_info.get('name', 'Unknown')}")
-            
+
             if hits:
                 # Combine domain information
                 best_hit = hits[0]
                 domain_info = self.domain_info.get(best_hit.domain_id, {})
-                
+
                 annotations[seq_id] = FunctionalAnnotation(
                     gene_id=seq_id,
                     product=f"{domain_info.get('description', 'Domain')}-containing protein",
@@ -296,10 +296,10 @@ class HMMAnnotator(FunctionalAnnotator):
                     gene_id=seq_id,
                     confidence=0.0,
                 )
-        
+
         return annotations
-    
-    def _search_profiles(self, seq_id: str, sequence: str) -> List[DomainHit]:
+
+    def _search_profiles(self, seq_id: str, sequence: str) -> list[DomainHit]:
         """Lightweight motif screen standing in for HMMER ``hmmscan`` on Pfam."""
         s = (sequence or "").upper()
         motifs = [
@@ -307,7 +307,7 @@ class HMMAnnotator(FunctionalAnnotator):
             ("PF00001", "DRYLAIV", 30.0, 5e-4),
             ("PF00076", "RNPXKG", 28.0, 1e-3),
         ]
-        hits: List[DomainHit] = []
+        hits: list[DomainHit] = []
         for dom, motif, score, evalue in motifs:
             pos = s.find(motif)
             if pos < 0:
@@ -333,34 +333,42 @@ class HMMAnnotator(FunctionalAnnotator):
 
 class InterProAnnotator(FunctionalAnnotator):
     """InterProScan-like integrated annotation."""
-    
+
     def __init__(
         self,
-        applications: List[str] = None,
+        applications: list[str] = None,
     ):
         self.applications = applications or [
-            'Pfam', 'TIGRFAM', 'SMART', 'CDD', 'ProSiteProfiles',
-            'PANTHER', 'Gene3D', 'SUPERFAMILY', 'Coils', 'MobiDBLite',
+            "Pfam",
+            "TIGRFAM",
+            "SMART",
+            "CDD",
+            "ProSiteProfiles",
+            "PANTHER",
+            "Gene3D",
+            "SUPERFAMILY",
+            "Coils",
+            "MobiDBLite",
         ]
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Run integrated InterPro annotation."""
         logger.info(f"Running InterProScan on {len(sequences)} sequences")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             # Run multiple analyses
             all_domains = []
             go_terms = set()
-            
+
             for app in self.applications:
                 hits = self._run_application(app, sequence)
-                
+
                 for hit in hits:
                     all_domains.append(f"{app}:{hit['id']}")
-                    go_terms.update(hit.get('go_terms', []))
-            
+                    go_terms.update(hit.get("go_terms", []))
+
             annotations[seq_id] = FunctionalAnnotation(
                 gene_id=seq_id,
                 interpro_domains=all_domains,
@@ -368,10 +376,10 @@ class InterProAnnotator(FunctionalAnnotator):
                 confidence=len(all_domains) / 10,  # More domains = higher confidence
                 source="InterProScan",
             )
-        
+
         return annotations
-    
-    def _run_application(self, app: str, sequence: str) -> List[Dict]:
+
+    def _run_application(self, app: str, sequence: str) -> list[dict]:
         """Run a single InterProScan application (Pfam motif proxy when libraries are absent)."""
         if app == "Pfam":
             hmm = HMMAnnotator(database="Pfam")
@@ -382,39 +390,39 @@ class InterProAnnotator(FunctionalAnnotator):
 
 class GOAnnotator(FunctionalAnnotator):
     """Gene Ontology annotation."""
-    
-    def __init__(self, go_obo_file: Optional[str] = None):
+
+    def __init__(self, go_obo_file: str | None = None):
         self.go_graph = self._load_go_graph(go_obo_file)
-    
-    def _load_go_graph(self, obo_file: Optional[str]) -> Dict:
+
+    def _load_go_graph(self, obo_file: str | None) -> dict:
         """Load GO graph from OBO file."""
         # Simplified GO structure
         return {
-            'GO:0003674': {'name': 'molecular_function', 'namespace': 'molecular_function'},
-            'GO:0008150': {'name': 'biological_process', 'namespace': 'biological_process'},
-            'GO:0005575': {'name': 'cellular_component', 'namespace': 'cellular_component'},
+            "GO:0003674": {"name": "molecular_function", "namespace": "molecular_function"},
+            "GO:0008150": {"name": "biological_process", "namespace": "biological_process"},
+            "GO:0005575": {"name": "cellular_component", "namespace": "cellular_component"},
             # ... many more terms
         }
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate with GO terms."""
         logger.info("Annotating with GO terms")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             # Get GO terms from various sources
             go_terms = self._predict_go_terms(sequence)
-            
+
             annotations[seq_id] = FunctionalAnnotation(
                 gene_id=seq_id,
                 go_terms=go_terms,
                 source="GO",
             )
-        
+
         return annotations
-    
-    def _predict_go_terms(self, sequence: str) -> List[str]:
+
+    def _predict_go_terms(self, sequence: str) -> list[str]:
         """Coarse GO hints from composition and short motifs (IA evidence only)."""
         s = (sequence or "").upper()
         if not s:
@@ -427,16 +435,16 @@ class GOAnnotator(FunctionalAnnotator):
         if "DE" in s and s.count("E") / len(s) > 0.12:
             return ["GO:0003824", "GO:0008150"]
         return ["GO:0008150"]
-    
-    def propagate_terms(self, terms: List[str]) -> List[str]:
+
+    def propagate_terms(self, terms: list[str]) -> list[str]:
         """Propagate GO terms to parent terms."""
         all_terms = set(terms)
-        
+
         # Would traverse GO graph to add parent terms
-        
+
         return list(all_terms)
-    
-    def slim_terms(self, terms: List[str], slim_set: str = "goslim_generic") -> List[str]:
+
+    def slim_terms(self, terms: list[str], slim_set: str = "goslim_generic") -> list[str]:
         """Map terms toward high-level GO slim roots when present in the input."""
         _ = slim_set
         slim_roots = ("GO:0008150", "GO:0003674", "GO:0005575")
@@ -446,52 +454,52 @@ class GOAnnotator(FunctionalAnnotator):
 
 class KEGGAnnotator(FunctionalAnnotator):
     """KEGG pathway and KO annotation."""
-    
+
     def __init__(self, organism: str = "ko"):
         self.organism = organism
         self.ko_definitions = self._load_ko_definitions()
         self.pathway_map = self._load_pathway_map()
-    
-    def _load_ko_definitions(self) -> Dict[str, Dict]:
+
+    def _load_ko_definitions(self) -> dict[str, dict]:
         """Load KEGG Orthology definitions."""
         return {
             "K00001": {"name": "E1.1.1.1", "definition": "alcohol dehydrogenase"},
             "K00002": {"name": "E1.1.1.2", "definition": "alcohol dehydrogenase (NADP+)"},
             "K04451": {"name": "K04451", "definition": "p53-like transcription factor"},
         }
-    
-    def _load_pathway_map(self) -> Dict[str, List[str]]:
+
+    def _load_pathway_map(self) -> dict[str, list[str]]:
         """Load KO to pathway mapping."""
         return {
             "K00001": ["map00010", "map00071"],
             "K00002": ["map00010"],
             "K04451": ["map04115"],
         }
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate with KEGG KO and pathways."""
         logger.info("Annotating with KEGG")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             # Assign KO
             ko_assignments = self._assign_ko(sequence)
-            
+
             # Map to pathways
             pathways = set()
             for ko in ko_assignments:
                 pathways.update(self.pathway_map.get(ko, []))
-            
+
             # Get EC numbers
             ec_numbers = []
             for ko in ko_assignments:
                 ko_def = self.ko_definitions.get(ko, {})
-                name = ko_def.get('name', '')
-                if name.startswith('E'):
+                name = ko_def.get("name", "")
+                if name.startswith("E"):
                     ec = name[1:]  # Remove 'E' prefix
                     ec_numbers.append(ec)
-            
+
             annotations[seq_id] = FunctionalAnnotation(
                 gene_id=seq_id,
                 kegg_orthology=ko_assignments,
@@ -499,10 +507,10 @@ class KEGGAnnotator(FunctionalAnnotator):
                 ec_numbers=ec_numbers,
                 source="KEGG",
             )
-        
+
         return annotations
-    
-    def _assign_ko(self, sequence: str) -> List[str]:
+
+    def _assign_ko(self, sequence: str) -> list[str]:
         """Heuristic KO hints (KOfam / BLASTKOALA replace this in production)."""
         u = (sequence or "").upper()
         if "MEEPQ" in u:
@@ -514,57 +522,57 @@ class KEGGAnnotator(FunctionalAnnotator):
 
 class COGAnnotator(FunctionalAnnotator):
     """COG (Clusters of Orthologous Groups) annotation."""
-    
+
     COG_CATEGORIES = {
-        'J': 'Translation, ribosomal structure and biogenesis',
-        'A': 'RNA processing and modification',
-        'K': 'Transcription',
-        'L': 'Replication, recombination and repair',
-        'B': 'Chromatin structure and dynamics',
-        'D': 'Cell cycle control, cell division, chromosome partitioning',
-        'Y': 'Nuclear structure',
-        'V': 'Defense mechanisms',
-        'T': 'Signal transduction mechanisms',
-        'M': 'Cell wall/membrane/envelope biogenesis',
-        'N': 'Cell motility',
-        'Z': 'Cytoskeleton',
-        'W': 'Extracellular structures',
-        'U': 'Intracellular trafficking, secretion, and vesicular transport',
-        'O': 'Posttranslational modification, protein turnover, chaperones',
-        'C': 'Energy production and conversion',
-        'G': 'Carbohydrate transport and metabolism',
-        'E': 'Amino acid transport and metabolism',
-        'F': 'Nucleotide transport and metabolism',
-        'H': 'Coenzyme transport and metabolism',
-        'I': 'Lipid transport and metabolism',
-        'P': 'Inorganic ion transport and metabolism',
-        'Q': 'Secondary metabolites biosynthesis, transport and catabolism',
-        'R': 'General function prediction only',
-        'S': 'Function unknown',
+        "J": "Translation, ribosomal structure and biogenesis",
+        "A": "RNA processing and modification",
+        "K": "Transcription",
+        "L": "Replication, recombination and repair",
+        "B": "Chromatin structure and dynamics",
+        "D": "Cell cycle control, cell division, chromosome partitioning",
+        "Y": "Nuclear structure",
+        "V": "Defense mechanisms",
+        "T": "Signal transduction mechanisms",
+        "M": "Cell wall/membrane/envelope biogenesis",
+        "N": "Cell motility",
+        "Z": "Cytoskeleton",
+        "W": "Extracellular structures",
+        "U": "Intracellular trafficking, secretion, and vesicular transport",
+        "O": "Posttranslational modification, protein turnover, chaperones",
+        "C": "Energy production and conversion",
+        "G": "Carbohydrate transport and metabolism",
+        "E": "Amino acid transport and metabolism",
+        "F": "Nucleotide transport and metabolism",
+        "H": "Coenzyme transport and metabolism",
+        "I": "Lipid transport and metabolism",
+        "P": "Inorganic ion transport and metabolism",
+        "Q": "Secondary metabolites biosynthesis, transport and catabolism",
+        "R": "General function prediction only",
+        "S": "Function unknown",
     }
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate with COG categories."""
         logger.info("Annotating with COG")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             cog_hits = self._assign_cog(sequence)
-            
+
             categories = []
-            for cog_id, category in cog_hits:
+            for _cog_id, category in cog_hits:
                 categories.append(f"{category}:{self.COG_CATEGORIES.get(category, 'Unknown')}")
-            
+
             annotations[seq_id] = FunctionalAnnotation(
                 gene_id=seq_id,
                 cog_categories=categories,
                 source="COG",
             )
-        
+
         return annotations
-    
-    def _assign_cog(self, sequence: str) -> List[Tuple[str, str]]:
+
+    def _assign_cog(self, sequence: str) -> list[tuple[str, str]]:
         """Very coarse COG category guess from composition (for demos only)."""
         u = (sequence or "").upper()
         if not u:
@@ -580,42 +588,48 @@ class COGAnnotator(FunctionalAnnotator):
 
 class ECNumberAnnotator(FunctionalAnnotator):
     """EC number (enzyme) annotation."""
-    
+
     def __init__(self):
         self.ec_database = self._load_ec_database()
-    
-    def _load_ec_database(self) -> Dict[str, Dict]:
+
+    def _load_ec_database(self) -> dict[str, dict]:
         """Load EC number database."""
         return {
-            '1.1.1.1': {'name': 'alcohol dehydrogenase', 'reaction': 'alcohol + NAD+ = aldehyde + NADH'},
-            '1.1.1.2': {'name': 'alcohol dehydrogenase (NADP+)', 'reaction': 'alcohol + NADP+ = aldehyde + NADPH'},
+            "1.1.1.1": {
+                "name": "alcohol dehydrogenase",
+                "reaction": "alcohol + NAD+ = aldehyde + NADH",
+            },
+            "1.1.1.2": {
+                "name": "alcohol dehydrogenase (NADP+)",
+                "reaction": "alcohol + NADP+ = aldehyde + NADPH",
+            },
             # ... many more
         }
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Annotate with EC numbers."""
         logger.info("Annotating with EC numbers")
-        
+
         annotations = {}
-        
+
         for seq_id, sequence in sequences.items():
             ec_numbers = self._predict_ec(sequence)
-            
+
             product = "hypothetical protein"
             if ec_numbers:
                 ec_info = self.ec_database.get(ec_numbers[0], {})
-                product = ec_info.get('name', product)
-            
+                product = ec_info.get("name", product)
+
             annotations[seq_id] = FunctionalAnnotation(
                 gene_id=seq_id,
                 product=product,
                 ec_numbers=ec_numbers,
                 source="EC",
             )
-        
+
         return annotations
-    
-    def _predict_ec(self, sequence: str) -> List[str]:
+
+    def _predict_ec(self, sequence: str) -> list[str]:
         """Detect a few canonical active-site motifs when present."""
         u = (sequence or "").upper()
         if "GAGGV" in u:
@@ -627,21 +641,21 @@ class ECNumberAnnotator(FunctionalAnnotator):
 
 class IntegratedAnnotator:
     """Integrate annotations from multiple sources."""
-    
-    def __init__(self, annotators: List[FunctionalAnnotator] = None):
+
+    def __init__(self, annotators: list[FunctionalAnnotator] = None):
         self.annotators = annotators or [
             BlastAnnotator(),
             HMMAnnotator(),
             KEGGAnnotator(),
             COGAnnotator(),
         ]
-    
-    def annotate(self, sequences: Dict[str, str]) -> Dict[str, FunctionalAnnotation]:
+
+    def annotate(self, sequences: dict[str, str]) -> dict[str, FunctionalAnnotation]:
         """Run all annotators and integrate results."""
         logger.info("Running integrated annotation")
-        
+
         all_annotations = []
-        
+
         # Run each annotator
         for annotator in self.annotators:
             try:
@@ -649,27 +663,26 @@ class IntegratedAnnotator:
                 all_annotations.append(annotations)
             except Exception as e:
                 logger.warning(f"Annotator {type(annotator).__name__} failed: {e}")
-        
+
         # Integrate results
         integrated = {}
-        
+
         for seq_id in sequences:
             integrated[seq_id] = self._integrate_annotations(
-                seq_id,
-                [ann.get(seq_id) for ann in all_annotations if seq_id in ann]
+                seq_id, [ann.get(seq_id) for ann in all_annotations if seq_id in ann]
             )
-        
+
         return integrated
-    
+
     def _integrate_annotations(
         self,
         seq_id: str,
-        annotations: List[FunctionalAnnotation],
+        annotations: list[FunctionalAnnotation],
     ) -> FunctionalAnnotation:
         """Integrate multiple annotations for one sequence."""
         if not annotations:
             return FunctionalAnnotation(gene_id=seq_id)
-        
+
         # Combine all terms
         go_terms = set()
         ec_numbers = set()
@@ -678,14 +691,14 @@ class IntegratedAnnotator:
         pfam = set()
         interpro = set()
         pathways = set()
-        
+
         best_product = "hypothetical protein"
         best_confidence = 0.0
-        
+
         for ann in annotations:
             if ann is None:
                 continue
-            
+
             go_terms.update(ann.go_terms)
             ec_numbers.update(ann.ec_numbers)
             kegg_ko.update(ann.kegg_orthology)
@@ -693,11 +706,11 @@ class IntegratedAnnotator:
             pfam.update(ann.pfam_domains)
             interpro.update(ann.interpro_domains)
             pathways.update(ann.kegg_pathways)
-            
+
             if ann.product != "hypothetical protein" and ann.confidence > best_confidence:
                 best_product = ann.product
                 best_confidence = ann.confidence
-        
+
         return FunctionalAnnotation(
             gene_id=seq_id,
             product=best_product,

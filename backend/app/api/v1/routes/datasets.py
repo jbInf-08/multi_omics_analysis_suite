@@ -1,27 +1,21 @@
-"""
-Dataset Routes
-"""
+"""Dataset Routes."""
 
-from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.app.core.database import get_db
-from backend.app.core.security import get_current_user, TokenPayload
+from backend.app.core.security import TokenPayload, get_current_user
 from backend.app.models.dataset import Dataset, DatasetStatus, OmicsType
 from backend.app.models.project import Project
+from backend.app.schemas.common import PaginatedResponse
 from backend.app.schemas.dataset import (
     DatasetCreate,
-    DatasetUpdate,
     DatasetResponse,
     DatasetSummary,
-    DatasetQC,
 )
-from backend.app.schemas.common import PaginatedResponse
-
 
 router = APIRouter()
 
@@ -36,19 +30,19 @@ async def create_dataset(
     # Verify project access
     result = await db.execute(select(Project).where(Project.id == dataset_data.project_id))
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
-    
+
     if str(project.owner_id) != current_user.sub:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to add datasets to this project",
         )
-    
+
     dataset = Dataset(
         name=dataset_data.name,
         description=dataset_data.description,
@@ -62,19 +56,19 @@ async def create_dataset(
         project_id=dataset_data.project_id,
         status=DatasetStatus.UPLOADING,
     )
-    
+
     db.add(dataset)
     await db.commit()
     await db.refresh(dataset)
-    
+
     return dataset
 
 
 @router.get("/", response_model=PaginatedResponse[DatasetSummary])
 async def list_datasets(
-    project_id: Optional[UUID] = None,
-    omics_type: Optional[str] = None,
-    status_filter: Optional[str] = None,
+    project_id: UUID | None = None,
+    omics_type: str | None = None,
+    status_filter: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: TokenPayload = Depends(get_current_user),
@@ -83,44 +77,34 @@ async def list_datasets(
     """List datasets."""
     # Build base query with project access check
     user_uuid = UUID(current_user.sub)
-    query = (
-        select(Dataset)
-        .join(Project)
-        .where(Project.owner_id == user_uuid)
-    )
-    count_query = (
-        select(func.count(Dataset.id))
-        .join(Project)
-        .where(Project.owner_id == user_uuid)
-    )
-    
+    query = select(Dataset).join(Project).where(Project.owner_id == user_uuid)
+    count_query = select(func.count(Dataset.id)).join(Project).where(Project.owner_id == user_uuid)
+
     if project_id:
         query = query.where(Dataset.project_id == project_id)
         count_query = count_query.where(Dataset.project_id == project_id)
-    
+
     if omics_type:
         query = query.where(Dataset.omics_type == omics_type)
         count_query = count_query.where(Dataset.omics_type == omics_type)
-    
+
     if status_filter:
         query = query.where(Dataset.status == status_filter)
         count_query = count_query.where(Dataset.status == status_filter)
-    
+
     # Count total
     count_result = await db.execute(count_query)
     total = count_result.scalar()
-    
+
     # Get paginated results
     offset = (page - 1) * page_size
     result = await db.execute(
-        query.order_by(Dataset.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
+        query.order_by(Dataset.created_at.desc()).offset(offset).limit(page_size)
     )
     datasets = result.scalars().all()
-    
+
     pages = (total + page_size - 1) // page_size if total > 0 else 1
-    
+
     summaries = [
         DatasetSummary(
             id=d.id,
@@ -134,7 +118,7 @@ async def list_datasets(
         )
         for d in datasets
     ]
-    
+
     return PaginatedResponse(
         items=summaries,
         total=total,
@@ -160,13 +144,13 @@ async def get_dataset(
         .where(Project.owner_id == UUID(current_user.sub))
     )
     dataset = result.scalar_one_or_none()
-    
+
     if not dataset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found or not authorized",
         )
-    
+
     return dataset
 
 
@@ -180,8 +164,9 @@ async def upload_dataset_file(
     """Upload data file for dataset."""
     import os
     from pathlib import Path
+
     import aiofiles
-    
+
     # Verify dataset access
     result = await db.execute(
         select(Dataset)
@@ -190,25 +175,25 @@ async def upload_dataset_file(
         .where(Project.owner_id == UUID(current_user.sub))
     )
     dataset = result.scalar_one_or_none()
-    
+
     if not dataset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found or not authorized",
         )
-    
+
     # Create storage directory
     upload_dir = Path(os.environ.get("UPLOAD_DIR", "./data/uploads"))
     dataset_dir = upload_dir / str(dataset_id)
     dataset_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Save file
     file_path = dataset_dir / file.filename
-    
+
     async with aiofiles.open(file_path, "wb") as f:
         content = await file.read()
         await f.write(content)
-    
+
     # Determine file type
     file_ext = Path(file.filename).suffix.lower().lstrip(".")
     file_type_map = {
@@ -224,20 +209,21 @@ async def upload_dataset_file(
         "h5ad": "h5ad",
     }
     file_type = file_type_map.get(file_ext, "csv")
-    
+
     # Update dataset status
     dataset.status = DatasetStatus.PROCESSING
     dataset.data_format = file_type
     await db.commit()
-    
+
     # Start processing task
     from backend.app.tasks.data_tasks import process_uploaded_file
+
     task = process_uploaded_file.delay(
         dataset_id=str(dataset_id),
         file_path=str(file_path),
         file_type=file_type,
     )
-    
+
     return {
         "message": "File uploaded successfully",
         "dataset_id": str(dataset_id),
@@ -262,26 +248,27 @@ async def run_dataset_qc(
         .where(Project.owner_id == UUID(current_user.sub))
     )
     dataset = result.scalar_one_or_none()
-    
+
     if not dataset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found or not authorized",
         )
-    
+
     if dataset.status != DatasetStatus.READY:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Dataset is not ready for QC (status: {dataset.status.value})",
         )
-    
+
     # Start QC task
     from backend.app.tasks.data_tasks import run_quality_control
+
     task = run_quality_control.delay(
         dataset_id=str(dataset_id),
         parameters={},
     )
-    
+
     return {
         "message": "Quality control started",
         "dataset_id": str(dataset_id),
@@ -305,19 +292,19 @@ async def normalize_dataset(
         .where(Project.owner_id == UUID(current_user.sub))
     )
     dataset = result.scalar_one_or_none()
-    
+
     if not dataset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found or not authorized",
         )
-    
+
     if dataset.status != DatasetStatus.READY:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Dataset is not ready for normalization (status: {dataset.status.value})",
         )
-    
+
     # Validate method
     valid_methods = ["zscore", "minmax", "quantile", "log2", "log10", "vst", "tmm", "tpm", "robust"]
     if method not in valid_methods:
@@ -325,14 +312,15 @@ async def normalize_dataset(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid normalization method. Valid options: {valid_methods}",
         )
-    
+
     # Start normalization task
     from backend.app.tasks.data_tasks import normalize_dataset as normalize_task
+
     task = normalize_task.delay(
         dataset_id=str(dataset_id),
         method=method,
     )
-    
+
     return {
         "message": f"Normalization started with method: {method}",
         "dataset_id": str(dataset_id),
@@ -355,12 +343,12 @@ async def delete_dataset(
         .where(Project.owner_id == UUID(current_user.sub))
     )
     dataset = result.scalar_one_or_none()
-    
+
     if not dataset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found or not authorized",
         )
-    
+
     dataset.status = DatasetStatus.ARCHIVED
     await db.commit()

@@ -1,23 +1,23 @@
-"""
-Multi-Omics Analysis Suite - Main FastAPI Application
+"""Multi-Omics Analysis Suite - Main FastAPI Application.
 =====================================================
 
 Entry point for the FastAPI backend server.
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from backend.app.core.config import settings
-from backend.app.core.database import init_db, close_db
-from backend.app.api.v1.routes import api_router
+
 from backend.app.api.graphql.context import AppGraphQLRouter, get_graphql_context
 from backend.app.api.graphql.schema import schema
+from backend.app.api.v1.routes import api_router
 from backend.app.api.websocket.manager import websocket_router
+from backend.app.core.config import settings
+from backend.app.core.database import close_db, init_db
 from backend.omics.base.registry import OmicsRegistry
 
 
@@ -27,17 +27,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup
     print("Starting Multi-Omics Analysis Suite...")
     await init_db()
-    
+
     # Initialize omics registry
     registry = OmicsRegistry()
     await registry.discover_and_register_modules()
     app.state.omics_registry = registry
-    
+
     print(f"Registered {len(registry.list_modules())} omics modules")
     print("Multi-Omics Analysis Suite started successfully!")
-    
+
     yield
-    
+
     # Shutdown
     print("Shutting down Multi-Omics Analysis Suite...")
     await close_db()
@@ -49,9 +49,9 @@ app = FastAPI(
     title="Multi-Omics Analysis Suite",
     description="""
     A comprehensive multi-omics analysis platform covering 50+ omics disciplines.
-    
+
     ## Features
-    
+
     - **50+ Omics Types**: Genomics, Proteomics, Transcriptomics, Metabolomics, and many more
     - **Advanced ML/AI**: Deep learning, GNNs, AutoML, explainability
     - **Multi-Omics Integration**: Data fusion, pathway analysis, network integration
@@ -59,9 +59,9 @@ app = FastAPI(
     - **Production Ready**: Kubernetes, monitoring, security
     - **Bioinformatics tools** (`/api/v1/tools`): gene prediction (including optional Prodigal binary),
       MD, docking, structure→MD→dock; authenticate with JWT or `X-API-Key` when `TOOLS_API_KEY` is set
-    
+
     ## API Versions
-    
+
     - `/api/v1/` - REST API endpoints
     - `/api/v1/tools/` - Gene annotation, MD, docking (see OpenAPI **Bioinformatics Tools** tag)
     - `/graphql` - GraphQL API

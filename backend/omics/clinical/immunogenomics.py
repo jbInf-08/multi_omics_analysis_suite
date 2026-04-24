@@ -1,71 +1,126 @@
-"""
-Immunogenomics Module - Immune system genomics
-"""
+"""Immunogenomics Module - Immune system genomics."""
 
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
+
 from backend.omics.base.omics_base import (
-    OmicsModuleBase, OmicsCategory, OmicsData, QCReport, QCMetric,
-    AnalysisParams, AnalysisResult, Visualization, Pipeline, AnalysisDefinition, DataSource,
+    AnalysisDefinition,
+    AnalysisParams,
+    AnalysisResult,
+    DataSource,
+    OmicsCategory,
+    OmicsData,
+    OmicsModuleBase,
+    Pipeline,
+    QCMetric,
+    QCReport,
+    Visualization,
 )
 
 
 class ImmunogenomicsModule(OmicsModuleBase):
     """Immunogenomics module for immune system analysis."""
-    
+
     def __init__(self):
         super().__init__()
         self._version = "1.0.0"
         self._supported_formats = ["csv", "tsv", "vcf", "fasta"]
         self._pipelines = [
-            Pipeline(name="immune_profiling", description="Immune cell profiling and repertoire analysis",
-                steps=["load_data", "qc", "cell_deconvolution", "repertoire_analysis", "neoantigen_prediction"],
-                default_parameters={"deconvolution_method": "cibersort"}),
-            Pipeline(name="hla_typing", description="HLA genotyping and analysis",
+            Pipeline(
+                name="immune_profiling",
+                description="Immune cell profiling and repertoire analysis",
+                steps=[
+                    "load_data",
+                    "qc",
+                    "cell_deconvolution",
+                    "repertoire_analysis",
+                    "neoantigen_prediction",
+                ],
+                default_parameters={"deconvolution_method": "cibersort"},
+            ),
+            Pipeline(
+                name="hla_typing",
+                description="HLA genotyping and analysis",
                 steps=["load_data", "hla_calling", "allele_annotation", "disease_association"],
-                default_parameters={"resolution": "4-digit"}),
+                default_parameters={"resolution": "4-digit"},
+            ),
         ]
         self._analyses = [
-            AnalysisDefinition(name="immune_deconvolution", description="Estimate immune cell composition",
-                parameters={"method": {"type": "str", "default": "cibersort"}}, output_types=["table", "stacked_bar"]),
-            AnalysisDefinition(name="tcr_repertoire", description="T-cell receptor repertoire analysis",
-                parameters={"diversity_metrics": {"type": "list", "default": ["shannon", "clonality"]}}, output_types=["table", "distribution"]),
-            AnalysisDefinition(name="neoantigen_prediction", description="Predict neoantigens",
-                parameters={"binding_threshold": {"type": "float", "default": 500}}, output_types=["table"]),
-            AnalysisDefinition(name="hla_typing", description="HLA allele calling",
-                parameters={"resolution": {"type": "str", "default": "4-digit"}}, output_types=["table"]),
+            AnalysisDefinition(
+                name="immune_deconvolution",
+                description="Estimate immune cell composition",
+                parameters={"method": {"type": "str", "default": "cibersort"}},
+                output_types=["table", "stacked_bar"],
+            ),
+            AnalysisDefinition(
+                name="tcr_repertoire",
+                description="T-cell receptor repertoire analysis",
+                parameters={
+                    "diversity_metrics": {"type": "list", "default": ["shannon", "clonality"]}
+                },
+                output_types=["table", "distribution"],
+            ),
+            AnalysisDefinition(
+                name="neoantigen_prediction",
+                description="Predict neoantigens",
+                parameters={"binding_threshold": {"type": "float", "default": 500}},
+                output_types=["table"],
+            ),
+            AnalysisDefinition(
+                name="hla_typing",
+                description="HLA allele calling",
+                parameters={"resolution": {"type": "str", "default": "4-digit"}},
+                output_types=["table"],
+            ),
         ]
-    
+
     @property
-    def name(self) -> str: return "immunogenomics"
+    def name(self) -> str:
+        return "immunogenomics"
+
     @property
-    def category(self) -> OmicsCategory: return OmicsCategory.CLINICAL
+    def category(self) -> OmicsCategory:
+        return OmicsCategory.CLINICAL
+
     @property
-    def description(self) -> str: return "Immune system genomics, HLA typing, and immune repertoire analysis"
-    
+    def description(self) -> str:
+        return "Immune system genomics, HLA typing, and immune repertoire analysis"
+
     def load_data(self, source: DataSource) -> OmicsData:
         if source.source_type == "file":
-            df = pd.read_csv(source.path, sep="\t" if source.path.endswith(".tsv") else ",", index_col=0)
-            return OmicsData(data=df.T, feature_names=df.index.tolist(), sample_names=df.columns.tolist(), data_type="immunogenomics", source=source)
+            df = pd.read_csv(
+                source.path, sep="\t" if source.path.endswith(".tsv") else ",", index_col=0
+            )
+            return OmicsData(
+                data=df.T,
+                feature_names=df.index.tolist(),
+                sample_names=df.columns.tolist(),
+                data_type="immunogenomics",
+                source=source,
+            )
         raise ValueError(f"Unsupported source: {source.source_type}")
-    
-    def preprocess(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> OmicsData:
+
+    def preprocess(self, data: OmicsData, params: dict[str, Any] | None = None) -> OmicsData:
         processed = data.copy()
         processed.preprocessing_history.append("preprocess()")
         return processed
-    
-    def quality_control(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> QCReport:
+
+    def quality_control(self, data: OmicsData, params: dict[str, Any] | None = None) -> QCReport:
         metrics = [QCMetric(name="feature_count", value=len(data.feature_names), threshold=10)]
-        return QCReport(passed=all(m.passed for m in metrics if m.passed is not None), metrics=metrics)
-    
-    def normalize(self, data: OmicsData, method: str = "tpm", params: Optional[Dict[str, Any]] = None) -> OmicsData:
+        return QCReport(
+            passed=all(m.passed for m in metrics if m.passed is not None), metrics=metrics
+        )
+
+    def normalize(
+        self, data: OmicsData, method: str = "tpm", params: dict[str, Any] | None = None
+    ) -> OmicsData:
         normalized = data.copy()
         normalized.preprocessing_history.append(f"normalize(method={method})")
         return normalized
-    
+
     def analyze(self, data: OmicsData, params: AnalysisParams) -> AnalysisResult:
         if params.analysis_type == "immune_deconvolution":
             markers = {
@@ -85,7 +140,7 @@ class ImmunogenomicsModule(OmicsModuleBase):
                     if mg in g_index:
                         m[g_index[mg], j] = 1.0
 
-            per_sample: Dict[str, Dict[str, float]] = {}
+            per_sample: dict[str, dict[str, float]] = {}
             for i, sid in enumerate(data.sample_names):
                 b = np.maximum(data.data.iloc[i].values.astype(float), 0.0)
                 coef, _ = nnls(m, b)
@@ -99,8 +154,17 @@ class ImmunogenomicsModule(OmicsModuleBase):
                 data={"cell_fractions": per_sample, "method": "nnls_marker_basis"},
                 summary={"n_samples": len(per_sample), "n_celltypes": len(celltypes)},
             )
-        return AnalysisResult(analysis_type=params.analysis_type, status="success", data={}, summary={})
-    
-    def visualize(self, result: AnalysisResult, plot_types: Optional[List[str]] = None) -> List[Visualization]: return []
-    def get_available_pipelines(self) -> List[Pipeline]: return self._pipelines
-    def get_available_analyses(self) -> List[AnalysisDefinition]: return self._analyses
+        return AnalysisResult(
+            analysis_type=params.analysis_type, status="success", data={}, summary={}
+        )
+
+    def visualize(
+        self, result: AnalysisResult, plot_types: list[str] | None = None
+    ) -> list[Visualization]:
+        return []
+
+    def get_available_pipelines(self) -> list[Pipeline]:
+        return self._pipelines
+
+    def get_available_analyses(self) -> list[AnalysisDefinition]:
+        return self._analyses

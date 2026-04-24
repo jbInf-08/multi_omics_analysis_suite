@@ -1,21 +1,21 @@
-"""
-Unit Tests for GraphQL Resolvers
+"""Unit Tests for GraphQL Resolvers.
 =================================
 
 Tests for resolver type conversion and behavior with mocked DB.
 """
 
-import pytest
-from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
 
 from backend.app.api.graphql.resolvers import (
-    model_to_project_type,
-    model_to_dataset_type,
-    model_to_analysis_type,
-    get_projects,
     get_datasets,
+    get_projects,
+    model_to_analysis_type,
+    model_to_dataset_type,
+    model_to_project_type,
 )
 
 

@@ -1,6 +1,4 @@
-"""
-Integration-test defaults: avoid requiring a live PostgreSQL for FastAPI lifespan startup.
-"""
+"""Integration-test defaults: avoid requiring a live PostgreSQL for FastAPI lifespan startup."""
 
 from unittest.mock import AsyncMock
 

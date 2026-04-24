@@ -1,5 +1,4 @@
-"""
-Clinical Analysis Module
+"""Clinical Analysis Module.
 ========================
 
 Clinical annotation and decision support:
@@ -9,16 +8,16 @@ Clinical annotation and decision support:
 """
 
 from backend.clinical.annotation import (
-    ClinicalAnnotator,
-    COSMICClient,
-    ClinVarClient,
-    OncoKBClient,
     AnnotationResult,
+    ClinicalAnnotator,
+    ClinVarClient,
+    COSMICClient,
+    OncoKBClient,
 )
 from backend.clinical.decision_support import (
     ClinicalDecisionSupport,
-    TreatmentRecommendation,
     ClinicalEvidence,
+    TreatmentRecommendation,
 )
 
 __all__ = [

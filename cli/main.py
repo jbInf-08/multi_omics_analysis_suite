@@ -1,19 +1,18 @@
-"""
-Multi-Omics Analysis Suite CLI - Main Entry Point
+"""Multi-Omics Analysis Suite CLI - Main Entry Point.
 =================================================
 
 Command-line interface for running multi-omics analyses.
 """
 
+import os
+import sys
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from pathlib import Path
-from typing import Optional, List
-import os
-import sys
+from rich.table import Table
 
 # Initialize CLI app
 app = typer.Typer(
@@ -49,30 +48,33 @@ api_app = typer.Typer(help="Call the running HTTP API (MOAS_API_BASE_URL, MOAS_A
 # Main Commands
 # =============================================================================
 
+
 @app.command()
 def version():
     """Show version information."""
     from backend import __version__
-    
-    console.print(Panel(
-        f"[bold blue]Multi-Omics Analysis Suite[/bold blue]\n"
-        f"Version: {__version__}\n"
-        f"Python: {sys.version.split()[0]}",
-        title="MOAS",
-        expand=False,
-    ))
+
+    console.print(
+        Panel(
+            f"[bold blue]Multi-Omics Analysis Suite[/bold blue]\n"
+            f"Version: {__version__}\n"
+            f"Python: {sys.version.split()[0]}",
+            title="MOAS",
+            expand=False,
+        )
+    )
 
 
 @app.command()
 def info():
     """Show available omics modules and analyses."""
-    from backend.omics import OmicsRegistry, OmicsCategory
-    
+    from backend.omics import OmicsCategory, OmicsRegistry
+
     registry = OmicsRegistry()
     registry.discover_modules()
-    
+
     console.print("\n[bold]Available Omics Modules[/bold]\n")
-    
+
     for category in OmicsCategory:
         modules = registry.list_modules(category.value)
         if modules:
@@ -81,17 +83,21 @@ def info():
             table.add_column("Description", style="white")
             table.add_column("Pipelines", style="green")
             table.add_column("Analyses", style="yellow")
-            
+
             for module in modules:
                 pipelines = len(module.get_available_pipelines())
                 analyses = len(module.get_available_analyses())
                 table.add_row(
                     module.name,
-                    module.description[:50] + "..." if len(module.description) > 50 else module.description,
+                    (
+                        module.description[:50] + "..."
+                        if len(module.description) > 50
+                        else module.description
+                    ),
                     str(pipelines),
                     str(analyses),
                 )
-            
+
             console.print(table)
             console.print()
 
@@ -105,9 +111,9 @@ def init(
     if project_dir.exists() and any(project_dir.iterdir()):
         console.print(f"[red]Error: Directory {project_dir} is not empty[/red]")
         raise typer.Exit(1)
-    
+
     project_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create project structure
     directories = [
         "data/raw",
@@ -117,10 +123,10 @@ def init(
         "reports",
         "configs",
     ]
-    
+
     for d in directories:
         (project_dir / d).mkdir(parents=True, exist_ok=True)
-    
+
     # Create default config
     config_content = f"""# MOAS Project Configuration
 project_name: {name or project_dir.name}
@@ -144,7 +150,7 @@ ml:
   random_seed: 42
 """
     (project_dir / "configs" / "project.yaml").write_text(config_content)
-    
+
     console.print(f"[green]Project initialized at {project_dir}[/green]")
     console.print(f"Created directories: {', '.join(directories)}")
 
@@ -152,6 +158,7 @@ ml:
 # =============================================================================
 # Analyze Commands
 # =============================================================================
+
 
 @analyze_app.command("de")
 def differential_expression(
@@ -161,75 +168,79 @@ def differential_expression(
     group_col: str = typer.Option("group", "--group", "-g", help="Column for group comparison"),
     control: str = typer.Option("control", "--control", "-c", help="Control group name"),
     treatment: str = typer.Option("treatment", "--treatment", "-t", help="Treatment group name"),
-    method: str = typer.Option("ttest", "--method", "-m", help="Statistical method (ttest, wilcoxon, deseq2)"),
+    method: str = typer.Option(
+        "ttest", "--method", "-m", help="Statistical method (ttest, wilcoxon, deseq2)"
+    ),
     alpha: float = typer.Option(0.05, "--alpha", help="Significance level"),
     fc_threshold: float = typer.Option(1.0, "--fc", help="log2 fold change threshold"),
 ):
     """Run differential expression analysis."""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     from scipy import stats
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("Loading data...", total=None)
-        
+
         # Load data
         expr = pd.read_csv(input_file, index_col=0)
         meta = pd.read_csv(metadata_file, index_col=0)
-        
+
         progress.update(task, description="Running differential expression analysis...")
-        
+
         # Get sample groups
         control_samples = meta[meta[group_col] == control].index
         treatment_samples = meta[meta[group_col] == treatment].index
-        
+
         results = []
         for gene in expr.index:
             ctrl_vals = expr.loc[gene, control_samples].values.astype(float)
             treat_vals = expr.loc[gene, treatment_samples].values.astype(float)
-            
+
             # Calculate statistics
             log2fc = np.log2(np.mean(treat_vals) + 1) - np.log2(np.mean(ctrl_vals) + 1)
-            
+
             if method == "ttest":
                 stat, pval = stats.ttest_ind(ctrl_vals, treat_vals)
             else:  # wilcoxon
                 stat, pval = stats.mannwhitneyu(ctrl_vals, treat_vals)
-            
-            results.append({
-                "gene": gene,
-                "log2FoldChange": log2fc,
-                "pvalue": pval,
-                "baseMean": (np.mean(ctrl_vals) + np.mean(treat_vals)) / 2,
-            })
-        
+
+            results.append(
+                {
+                    "gene": gene,
+                    "log2FoldChange": log2fc,
+                    "pvalue": pval,
+                    "baseMean": (np.mean(ctrl_vals) + np.mean(treat_vals)) / 2,
+                }
+            )
+
         df_results = pd.DataFrame(results)
-        
+
         # Multiple testing correction
         from statsmodels.stats.multitest import multipletests
+
         df_results["padj"] = multipletests(df_results["pvalue"], method="fdr_bh")[1]
-        
+
         # Mark significant
-        df_results["significant"] = (
-            (df_results["padj"] < alpha) & 
-            (np.abs(df_results["log2FoldChange"]) > fc_threshold)
+        df_results["significant"] = (df_results["padj"] < alpha) & (
+            np.abs(df_results["log2FoldChange"]) > fc_threshold
         )
-        
+
         progress.update(task, description="Saving results...")
-        
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         df_results.to_csv(output_dir / "de_results.csv", index=False)
-    
+
     # Summary
     n_up = len(df_results[(df_results["significant"]) & (df_results["log2FoldChange"] > 0)])
     n_down = len(df_results[(df_results["significant"]) & (df_results["log2FoldChange"] < 0)])
-    
-    console.print(f"\n[bold green]Analysis complete![/bold green]")
+
+    console.print("\n[bold green]Analysis complete![/bold green]")
     console.print(f"Total genes: {len(df_results)}")
     console.print(f"Upregulated: [red]{n_up}[/red]")
     console.print(f"Downregulated: [blue]{n_down}[/blue]")
@@ -246,74 +257,87 @@ def pathway_analysis(
 ):
     """Run pathway enrichment analysis."""
     import pandas as pd
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("Loading gene list...", total=None)
-        
+
         # Load genes
         if gene_list.suffix == ".csv":
             df = pd.read_csv(gene_list)
-            if "gene" in df.columns:
-                genes = df["gene"].tolist()
-            else:
-                genes = df.iloc[:, 0].tolist()
+            genes = df["gene"].tolist() if "gene" in df.columns else df.iloc[:, 0].tolist()
         else:
             genes = gene_list.read_text().strip().split("\n")
-        
+
         progress.update(task, description=f"Running pathway analysis ({database})...")
-        
+
         # Placeholder: In real implementation, call pathway analysis libraries
         # For demo, create mock results
         import numpy as np
+
         np.random.seed(42)
-        
+
         pathway_names = [
-            "Cell cycle", "Apoptosis", "DNA repair", "Immune response",
-            "Metabolism of lipids", "Signal transduction", "Gene expression",
-            "Cell migration", "Angiogenesis", "Inflammation",
-            "Oxidative stress", "Autophagy", "Cell adhesion",
-            "Protein folding", "Lipid metabolism", "Amino acid metabolism",
-            "Carbohydrate metabolism", "Nucleotide metabolism",
-            "Energy metabolism", "Drug metabolism",
+            "Cell cycle",
+            "Apoptosis",
+            "DNA repair",
+            "Immune response",
+            "Metabolism of lipids",
+            "Signal transduction",
+            "Gene expression",
+            "Cell migration",
+            "Angiogenesis",
+            "Inflammation",
+            "Oxidative stress",
+            "Autophagy",
+            "Cell adhesion",
+            "Protein folding",
+            "Lipid metabolism",
+            "Amino acid metabolism",
+            "Carbohydrate metabolism",
+            "Nucleotide metabolism",
+            "Energy metabolism",
+            "Drug metabolism",
         ][:top_n]
-        
-        results = pd.DataFrame({
-            "pathway": pathway_names,
-            "pvalue": np.random.exponential(0.01, top_n),
-            "padj": np.random.exponential(0.05, top_n),
-            "enrichment_score": np.random.uniform(1.5, 4.0, top_n),
-            "overlap_genes": np.random.randint(5, 50, top_n),
-            "pathway_size": np.random.randint(20, 200, top_n),
-        })
+
+        results = pd.DataFrame(
+            {
+                "pathway": pathway_names,
+                "pvalue": np.random.exponential(0.01, top_n),
+                "padj": np.random.exponential(0.05, top_n),
+                "enrichment_score": np.random.uniform(1.5, 4.0, top_n),
+                "overlap_genes": np.random.randint(5, 50, top_n),
+                "pathway_size": np.random.randint(20, 200, top_n),
+            }
+        )
         results = results.sort_values("pvalue")
-        
+
         progress.update(task, description="Saving results...")
-        
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         results.to_csv(output_dir / "pathway_enrichment.csv", index=False)
-    
-    console.print(f"\n[bold green]Pathway analysis complete![/bold green]")
+
+    console.print("\n[bold green]Pathway analysis complete![/bold green]")
     console.print(f"Input genes: {len(genes)}")
     console.print(f"Database: {database}")
-    console.print(f"Top enriched pathways:")
-    
+    console.print("Top enriched pathways:")
+
     table = Table()
     table.add_column("Pathway", style="cyan")
     table.add_column("P-value", style="yellow")
     table.add_column("Genes", style="green")
-    
+
     for _, row in results.head(10).iterrows():
         table.add_row(
             row["pathway"],
             f"{row['pvalue']:.2e}",
             f"{row['overlap_genes']}/{row['pathway_size']}",
         )
-    
+
     console.print(table)
 
 
@@ -325,19 +349,18 @@ def quality_control(
 ):
     """Run quality control analysis on omics data."""
     import pandas as pd
-    import numpy as np
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("Loading data...", total=None)
-        
+
         df = pd.read_csv(input_file, index_col=0)
-        
+
         progress.update(task, description="Running QC checks...")
-        
+
         qc_results = {
             "n_features": len(df),
             "n_samples": len(df.columns),
@@ -348,42 +371,45 @@ def quality_control(
             "low_coverage_samples": len(df.columns[df.sum() < df.sum().median() * 0.5]),
             "low_variance_features": len(df.index[df.var(axis=1) < 0.1]),
         }
-        
+
         progress.update(task, description="Saving QC report...")
-        
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Save QC metrics
         pd.Series(qc_results).to_csv(output_dir / "qc_metrics.csv")
-        
+
         # Save sample statistics
-        sample_stats = pd.DataFrame({
-            "total_counts": df.sum(),
-            "detected_features": (df > 0).sum(),
-            "mean": df.mean(),
-            "std": df.std(),
-        })
+        sample_stats = pd.DataFrame(
+            {
+                "total_counts": df.sum(),
+                "detected_features": (df > 0).sum(),
+                "mean": df.mean(),
+                "std": df.std(),
+            }
+        )
         sample_stats.to_csv(output_dir / "sample_statistics.csv")
-    
-    console.print(f"\n[bold green]QC analysis complete![/bold green]")
-    
+
+    console.print("\n[bold green]QC analysis complete![/bold green]")
+
     table = Table(title="QC Summary")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="white")
-    
+
     for metric, value in qc_results.items():
         if isinstance(value, float):
             table.add_row(metric, f"{value:.2f}")
         else:
             table.add_row(metric, str(value))
-    
+
     console.print(table)
 
 
 # =============================================================================
 # Data Commands
 # =============================================================================
+
 
 @data_app.command("import")
 def import_data(
@@ -394,9 +420,9 @@ def import_data(
 ):
     """Import and preprocess data files."""
     import pandas as pd
-    
+
     console.print(f"Importing {input_file}...")
-    
+
     # Determine input format and load
     suffix = input_file.suffix.lower()
     if suffix in [".csv", ".tsv", ".txt"]:
@@ -409,52 +435,54 @@ def import_data(
     else:
         console.print(f"[red]Unsupported format: {suffix}[/red]")
         raise typer.Exit(1)
-    
+
     if normalize:
         console.print("Applying normalization...")
         # Simple log2 + quantile normalization placeholder
         df = df.apply(lambda x: (x - x.min()) / (x.max() - x.min() + 1e-10))
-    
+
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     output_file = output_dir / f"{input_file.stem}_processed.{format}"
-    
+
     if format == "csv":
         df.to_csv(output_file)
     elif format == "parquet":
         df.to_parquet(output_file)
     elif format == "h5":
         df.to_hdf(output_file, key="data")
-    
+
     console.print(f"[green]Data imported: {output_file}[/green]")
     console.print(f"Shape: {df.shape[0]} features x {df.shape[1]} samples")
 
 
 @data_app.command("merge")
 def merge_datasets(
-    inputs: List[Path] = typer.Argument(..., help="Input files to merge"),
+    inputs: list[Path] = typer.Argument(..., help="Input files to merge"),
     output: Path = typer.Option("./data/merged.csv", "--output", "-o", help="Output file"),
-    method: str = typer.Option("inner", "--method", "-m", help="Merge method (inner, outer, left, right)"),
+    method: str = typer.Option(
+        "inner", "--method", "-m", help="Merge method (inner, outer, left, right)"
+    ),
     axis: int = typer.Option(1, "--axis", help="Axis to merge (0=rows, 1=columns)"),
 ):
     """Merge multiple omics datasets."""
     import pandas as pd
-    
+
     console.print(f"Merging {len(inputs)} datasets...")
-    
+
     dfs = [pd.read_csv(f, index_col=0) for f in inputs]
-    
+
     if axis == 0:
         merged = pd.concat(dfs, axis=0, join=method)
     else:
         merged = dfs[0]
         for df in dfs[1:]:
             merged = merged.merge(df, left_index=True, right_index=True, how=method)
-    
+
     output.parent.mkdir(parents=True, exist_ok=True)
     merged.to_csv(output)
-    
+
     console.print(f"[green]Merged dataset saved: {output}[/green]")
     console.print(f"Final shape: {merged.shape}")
 
@@ -462,6 +490,7 @@ def merge_datasets(
 # =============================================================================
 # ML Commands
 # =============================================================================
+
 
 @ml_app.command("train")
 def train_model(
@@ -474,46 +503,49 @@ def train_model(
     cv_folds: int = typer.Option(5, "--cv", help="Cross-validation folds"),
 ):
     """Train a machine learning model."""
-    import pandas as pd
-    import numpy as np
     import joblib
-    
+    import pandas as pd
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         t = progress.add_task("Loading data...", total=None)
-        
+
         X = pd.read_csv(data_file, index_col=0)
         y = pd.read_csv(labels_file, index_col=0).iloc[:, 0]
-        
+
         progress.update(t, description="Preparing data...")
-        
-        from sklearn.model_selection import train_test_split, cross_val_score
+
+        from sklearn.model_selection import cross_val_score, train_test_split
+
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42
         )
-        
+
         progress.update(t, description=f"Training {model_type}...")
-        
+
         # Get model
         if model_type == "random_forest":
             from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
             if task == "classification":
                 model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
             else:
                 model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         elif model_type == "xgboost":
             import xgboost as xgb
+
             if task == "classification":
                 model = xgb.XGBClassifier(n_estimators=100, random_state=42, n_jobs=-1)
             else:
                 model = xgb.XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         elif model_type == "svm":
-            from sklearn.svm import SVC, SVR
-            from sklearn.preprocessing import StandardScaler
             from sklearn.pipeline import Pipeline
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.svm import SVC, SVR
+
             if task == "classification":
                 model = Pipeline([("scaler", StandardScaler()), ("svm", SVC(probability=True))])
             else:
@@ -521,39 +553,41 @@ def train_model(
         else:
             console.print(f"[red]Unknown model type: {model_type}[/red]")
             raise typer.Exit(1)
-        
+
         # Cross-validation
         progress.update(t, description="Running cross-validation...")
         scoring = "accuracy" if task == "classification" else "r2"
         cv_scores = cross_val_score(model, X_train, y_train, cv=cv_folds, scoring=scoring)
-        
+
         # Train final model
         progress.update(t, description="Training final model...")
         model.fit(X_train, y_train)
-        
+
         # Evaluate
         progress.update(t, description="Evaluating...")
         train_score = model.score(X_train, y_train)
         test_score = model.score(X_test, y_test)
-        
+
         # Save model
         progress.update(t, description="Saving model...")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, output_dir / f"{model_type}_model.joblib")
-    
-    console.print(f"\n[bold green]Training complete![/bold green]")
-    
+
+    console.print("\n[bold green]Training complete![/bold green]")
+
     table = Table(title="Model Performance")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="white")
-    
+
     table.add_row("Model Type", model_type)
     table.add_row("Task", task)
-    table.add_row(f"CV Score ({cv_folds}-fold)", f"{cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})")
+    table.add_row(
+        f"CV Score ({cv_folds}-fold)", f"{cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})"
+    )
     table.add_row("Train Score", f"{train_score:.4f}")
     table.add_row("Test Score", f"{test_score:.4f}")
-    
+
     console.print(table)
     console.print(f"Model saved to: {output_dir / f'{model_type}_model.joblib'}")
 
@@ -566,27 +600,27 @@ def predict(
     proba: bool = typer.Option(False, "--proba", "-p", help="Output probabilities"),
 ):
     """Make predictions using a trained model."""
-    import pandas as pd
     import joblib
-    
+    import pandas as pd
+
     console.print("Loading model and data...")
-    
+
     model = joblib.load(model_file)
     X = pd.read_csv(data_file, index_col=0)
-    
+
     console.print("Making predictions...")
-    
+
     predictions = model.predict(X)
-    
+
     result = pd.DataFrame({"prediction": predictions}, index=X.index)
-    
+
     if proba and hasattr(model, "predict_proba"):
         probas = model.predict_proba(X)
         for i, col in enumerate(model.classes_):
             result[f"prob_{col}"] = probas[:, i]
-    
+
     result.to_csv(output)
-    
+
     console.print(f"[green]Predictions saved to: {output}[/green]")
     console.print(f"Total predictions: {len(predictions)}")
 
@@ -596,26 +630,30 @@ def feature_selection(
     data_file: Path = typer.Argument(..., help="Feature data file"),
     labels_file: Path = typer.Argument(..., help="Labels file"),
     output: Path = typer.Option("./selected_features.csv", "--output", "-o", help="Output file"),
-    method: str = typer.Option("rf", "--method", "-m", help="Selection method (rf, lasso, rfe, univariate)"),
+    method: str = typer.Option(
+        "rf", "--method", "-m", help="Selection method (rf, lasso, rfe, univariate)"
+    ),
     n_features: int = typer.Option(50, "--n-features", "-n", help="Number of features to select"),
 ):
     """Run feature selection on omics data."""
-    import pandas as pd
     import numpy as np
-    
+    import pandas as pd
+
     console.print(f"Running feature selection ({method})...")
-    
+
     X = pd.read_csv(data_file, index_col=0)
     y = pd.read_csv(labels_file, index_col=0).iloc[:, 0]
-    
+
     if method == "rf":
         from sklearn.ensemble import RandomForestClassifier
+
         model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
         model.fit(X, y)
         importances = model.feature_importances_
     elif method == "lasso":
         from sklearn.linear_model import LassoCV
         from sklearn.preprocessing import StandardScaler
+
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         model = LassoCV(cv=5, random_state=42)
@@ -623,11 +661,13 @@ def feature_selection(
         importances = np.abs(model.coef_)
     elif method == "univariate":
         from sklearn.feature_selection import f_classif
+
         f_scores, _ = f_classif(X, y)
         importances = f_scores
     elif method == "rfe":
         from sklearn.feature_selection import RFE
         from sklearn.linear_model import LogisticRegression
+
         model = LogisticRegression(max_iter=1000, random_state=42)
         selector = RFE(model, n_features_to_select=n_features, step=100)
         selector.fit(X, y)
@@ -636,21 +676,23 @@ def feature_selection(
     else:
         console.print(f"[red]Unknown method: {method}[/red]")
         raise typer.Exit(1)
-    
+
     # Get top features
-    feature_importance = pd.DataFrame({
-        "feature": X.columns,
-        "importance": importances,
-    }).sort_values("importance", ascending=False)
-    
+    feature_importance = pd.DataFrame(
+        {
+            "feature": X.columns,
+            "importance": importances,
+        }
+    ).sort_values("importance", ascending=False)
+
     selected = feature_importance.head(n_features)
     selected.to_csv(output, index=False)
-    
+
     console.print(f"[green]Selected {n_features} features[/green]")
     console.print(f"Results saved to: {output}")
-    
+
     console.print("\nTop 10 features:")
-    for i, row in selected.head(10).iterrows():
+    for _i, row in selected.head(10).iterrows():
         console.print(f"  {row['feature']}: {row['importance']:.4f}")
 
 
@@ -662,8 +704,12 @@ def feature_selection(
 @annotate_app.command("genes")
 def cli_predict_genes(
     fasta: Path = typer.Argument(..., help="Input FASTA (DNA contigs)"),
-    output_dir: Path = typer.Option(Path("results/annotation"), "--output", "-o", help="Output directory"),
-    predictor: str = typer.Option("prodigal", "--predictor", "-p", help="prodigal|augustus|glimmer|metagene|orf"),
+    output_dir: Path = typer.Option(
+        Path("results/annotation"), "--output", "-o", help="Output directory"
+    ),
+    predictor: str = typer.Option(
+        "prodigal", "--predictor", "-p", help="prodigal|augustus|glimmer|metagene|orf"
+    ),
     gff_name: str = typer.Option("genes.gff", "--gff-name", help="GFF filename under output_dir"),
 ):
     """Predict genes on each FASTA record and write GFF."""
@@ -747,7 +793,9 @@ def cli_run_md(
         "n_frames": len(md.trajectory),
         "final_total_energy_kcal_mol": float(md.state.total_energy) if md.state else None,
         "rmsd": analyzer.calculate_rmsd(ref).tolist() if md.trajectory else [],
-        "radius_of_gyration": analyzer.calculate_radius_of_gyration().tolist() if md.trajectory else [],
+        "radius_of_gyration": (
+            analyzer.calculate_radius_of_gyration().tolist() if md.trajectory else []
+        ),
         "energy_statistics": analyzer.energy_statistics() if md.trajectory else {},
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -819,6 +867,7 @@ def cli_structure_md_dock(
 # Pipeline Commands
 # =============================================================================
 
+
 @pipeline_app.command("run")
 def run_pipeline(
     config_file: Path = typer.Argument(..., help="Pipeline configuration YAML file"),
@@ -827,43 +876,46 @@ def run_pipeline(
 ):
     """Run an analysis pipeline from configuration."""
     import yaml
-    
+
     console.print(f"Loading pipeline config: {config_file}")
-    
+
     with open(config_file) as f:
         config = yaml.safe_load(f)
-    
+
     pipeline_name = config.get("name", "Unnamed Pipeline")
     steps = config.get("steps", [])
-    
+
     console.print(f"\n[bold]Pipeline: {pipeline_name}[/bold]")
     console.print(f"Steps: {len(steps)}")
-    
+
     if dry_run:
         console.print("\n[yellow]Dry run - showing steps:[/yellow]")
         for i, step in enumerate(steps, 1):
             console.print(f"  {i}. {step.get('name', 'Unnamed')} ({step.get('type', 'unknown')})")
         return
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         for i, step in enumerate(steps, 1):
-            task = progress.add_task(f"Step {i}/{len(steps)}: {step.get('name', 'Running...')}", total=None)
-            
+            task = progress.add_task(
+                f"Step {i}/{len(steps)}: {step.get('name', 'Running...')}", total=None
+            )
+
             # Execute step based on type
-            step_type = step.get("type")
-            step_params = step.get("params", {})
-            
+            step.get("type")
+            step.get("params", {})
+
             # Placeholder for actual step execution
             import time
+
             time.sleep(0.5)  # Simulate work
-            
+
             progress.update(task, description=f"Step {i}/{len(steps)}: Complete")
-    
-    console.print(f"\n[bold green]Pipeline complete![/bold green]")
+
+    console.print("\n[bold green]Pipeline complete![/bold green]")
     console.print(f"Results saved to: {output_dir}")
 
 
@@ -871,28 +923,28 @@ def run_pipeline(
 def list_pipelines():
     """List available pipeline templates."""
     from backend.omics import OmicsRegistry
-    
+
     registry = OmicsRegistry()
     registry.discover_modules()
-    
+
     console.print("\n[bold]Available Pipeline Templates[/bold]\n")
-    
+
     table = Table()
     table.add_column("Omics Type", style="cyan")
     table.add_column("Pipeline", style="white")
     table.add_column("Description", style="dim")
-    
+
     for module_name in registry.list_all_modules():
         module = registry.get_module(module_name)
         if module:
             for pipeline in module.get_available_pipelines():
-                desc = pipeline.description if hasattr(pipeline, 'description') else ""
+                desc = pipeline.description if hasattr(pipeline, "description") else ""
                 table.add_row(
                     module_name,
-                    pipeline.name if hasattr(pipeline, 'name') else str(pipeline),
+                    pipeline.name if hasattr(pipeline, "name") else str(pipeline),
                     desc[:50] + "..." if len(desc) > 50 else desc,
                 )
-    
+
     console.print(table)
 
 
@@ -900,13 +952,14 @@ def list_pipelines():
 # Config Commands
 # =============================================================================
 
+
 @config_app.command("show")
 def show_config(
-    config_file: Optional[Path] = typer.Argument(None, help="Configuration file to show"),
+    config_file: Path | None = typer.Argument(None, help="Configuration file to show"),
 ):
     """Show current configuration."""
     import yaml
-    
+
     if config_file:
         with open(config_file) as f:
             config = yaml.safe_load(f)
@@ -918,33 +971,39 @@ def show_config(
             "output_format": "csv",
             "verbosity": "info",
         }
-    
-    console.print(Panel(
-        yaml.dump(config, default_flow_style=False),
-        title="Configuration",
-        expand=False,
-    ))
+
+    console.print(
+        Panel(
+            yaml.dump(config, default_flow_style=False),
+            title="Configuration",
+            expand=False,
+        )
+    )
 
 
 @api_app.command("module-analyze")
 def api_module_analyze(
     module: str = typer.Argument(..., help="Omics module name, e.g. single_cell"),
-    analysis_type: str = typer.Argument(..., help="Analysis name from GET /omics/modules/{module}/analyses"),
+    analysis_type: str = typer.Argument(
+        ..., help="Analysis name from GET /omics/modules/{module}/analyses"
+    ),
     project_id: str = typer.Argument(..., help="Project UUID"),
     dataset_ids: str = typer.Option("", "--dataset-ids", help="Comma-separated dataset UUIDs"),
-    base_url: Optional[str] = typer.Option(
+    base_url: str | None = typer.Option(
         None,
         "--base-url",
         envvar="MOAS_API_BASE_URL",
         help="API base URL (default http://localhost:8000)",
     ),
-    token: Optional[str] = typer.Option(
+    token: str | None = typer.Option(
         None,
         "--token",
         envvar="MOAS_API_TOKEN",
         help="JWT access token (no 'Bearer ' prefix)",
     ),
-    parameters_json: str = typer.Option("{}", "--parameters-json", help="JSON object for parameters"),
+    parameters_json: str = typer.Option(
+        "{}", "--parameters-json", help="JSON object for parameters"
+    ),
 ):
     """POST /api/v1/omics/modules/{module}/analyze (queues Celery; returns Analysis JSON)."""
     import json
@@ -986,7 +1045,9 @@ def api_module_analyze(
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace")
         console.print(
-            Panel(f"[red]{exc.code} {exc.reason}[/red]\n{err_body}", title="API error", expand=False)
+            Panel(
+                f"[red]{exc.code} {exc.reason}[/red]\n{err_body}", title="API error", expand=False
+            )
         )
         raise typer.Exit(1)
 
@@ -1000,19 +1061,19 @@ def validate_config(
 ):
     """Validate a configuration file."""
     import yaml
-    
+
     try:
         with open(config_file) as f:
             config = yaml.safe_load(f)
-        
+
         console.print(f"[green]Configuration is valid: {config_file}[/green]")
-        
+
         # Show summary
         if "steps" in config:
             console.print(f"  Pipeline steps: {len(config['steps'])}")
         if "data" in config:
             console.print(f"  Data sources: {len(config.get('data', {}).get('sources', []))}")
-            
+
     except yaml.YAMLError as e:
         console.print(f"[red]Invalid YAML: {e}[/red]")
         raise typer.Exit(1)
@@ -1024,6 +1085,7 @@ def validate_config(
 # =============================================================================
 # Entry Point
 # =============================================================================
+
 
 def main():
     """Main entry point for the CLI."""

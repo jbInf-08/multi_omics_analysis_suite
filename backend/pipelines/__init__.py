@@ -1,6 +1,4 @@
-"""
-Reusable analysis pipelines (genomics annotation, structure–MD–docking).
-"""
+"""Reusable analysis pipelines (genomics annotation, structure–MD–docking)."""
 
 from backend.pipelines.gene_annotation import (
     annotate_assembly_result,

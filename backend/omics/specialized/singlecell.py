@@ -1,5 +1,4 @@
-"""
-Single-Cell Omics Module
+"""Single-Cell Omics Module.
 ========================
 
 Analysis module for single-cell RNA-seq, ATAC-seq, and multimodal data.
@@ -7,7 +6,7 @@ Analysis module for single-cell RNA-seq, ATAC-seq, and multimodal data.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -29,8 +28,7 @@ from ..base import (
 
 
 def _counts_to_omics_matrix(raw: pd.DataFrame, source: DataSource) -> pd.DataFrame:
-    """
-    Return cells × genes. CSV/MTX often ship genes×cells; use ``source.metadata`` key
+    """Return cells × genes. CSV/MTX often ship genes×cells; use ``source.metadata`` key
     ``matrix_orientation`` = ``genes_on_rows`` | ``cells_on_rows`` (default auto).
     """
     orientation = (source.metadata or {}).get("matrix_orientation", "auto")
@@ -61,7 +59,7 @@ class SingleCellModule(OmicsModuleBase):
         return "Single-cell RNA-seq, ATAC-seq, and multimodal analysis"
 
     @property
-    def supported_formats(self) -> List[str]:
+    def supported_formats(self) -> list[str]:
         return ["h5ad", "loom", "mtx", "csv", "h5"]
 
     def load_data(self, source: DataSource) -> OmicsData:
@@ -116,7 +114,7 @@ class SingleCellModule(OmicsModuleBase):
             source=source,
         )
 
-    def preprocess(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> OmicsData:
+    def preprocess(self, data: OmicsData, params: dict[str, Any] | None = None) -> OmicsData:
         """Filter low-quality cells and rarely detected genes."""
         if data.data.empty:
             return data
@@ -142,7 +140,7 @@ class SingleCellModule(OmicsModuleBase):
             preprocessing_history=data.preprocessing_history + ["preprocess()"],
         )
 
-    def quality_control(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> QCReport:
+    def quality_control(self, data: OmicsData, params: dict[str, Any] | None = None) -> QCReport:
         """Run QC on single-cell data."""
         if data.data.empty:
             return QCReport(
@@ -174,7 +172,7 @@ class SingleCellModule(OmicsModuleBase):
         self,
         data: OmicsData,
         method: str = "log_normalize",
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> OmicsData:
         """Library-size normalize; ``scran`` uses pooled size factors + log1p."""
         if data.data.empty:
@@ -279,8 +277,8 @@ class SingleCellModule(OmicsModuleBase):
     def visualize(
         self,
         result: AnalysisResult,
-        plot_types: Optional[List[str]] = None,
-    ) -> List[Visualization]:
+        plot_types: list[str] | None = None,
+    ) -> list[Visualization]:
         """Create single-cell visualizations."""
         if result.analysis_type == "clustering" and "clusters" in result.data:
             return [
@@ -300,12 +298,21 @@ class SingleCellModule(OmicsModuleBase):
             )
         ]
 
-    def get_available_pipelines(self) -> List[Pipeline]:
+    def get_available_pipelines(self) -> list[Pipeline]:
         return [
             Pipeline(
                 name="scrnaseq_standard",
                 description="Standard scRNA-seq analysis workflow",
-                steps=["qc", "normalize", "hvg", "pca", "neighbors", "umap", "clustering", "markers"],
+                steps=[
+                    "qc",
+                    "normalize",
+                    "hvg",
+                    "pca",
+                    "neighbors",
+                    "umap",
+                    "clustering",
+                    "markers",
+                ],
             ),
             Pipeline(
                 name="trajectory_analysis",
@@ -319,13 +326,19 @@ class SingleCellModule(OmicsModuleBase):
             ),
         ]
 
-    def get_available_analyses(self) -> List[AnalysisDefinition]:
+    def get_available_analyses(self) -> list[AnalysisDefinition]:
         return [
             AnalysisDefinition(name="clustering", description="Cell clustering (Leiden/Louvain)"),
-            AnalysisDefinition(name="differential_expression", description="Marker gene identification"),
+            AnalysisDefinition(
+                name="differential_expression", description="Marker gene identification"
+            ),
             AnalysisDefinition(name="trajectory", description="Pseudotime trajectory analysis"),
             AnalysisDefinition(name="velocity", description="RNA velocity analysis"),
-            AnalysisDefinition(name="cell_type_annotation", description="Automated cell type annotation"),
+            AnalysisDefinition(
+                name="cell_type_annotation", description="Automated cell type annotation"
+            ),
             AnalysisDefinition(name="batch_correction", description="Batch effect correction"),
-            AnalysisDefinition(name="cell_communication", description="Cell-cell communication inference"),
+            AnalysisDefinition(
+                name="cell_communication", description="Cell-cell communication inference"
+            ),
         ]

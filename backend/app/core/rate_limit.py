@@ -1,5 +1,4 @@
-"""
-Rate limiting for CPU-heavy HTTP routes (chemistry tools).
+"""Rate limiting for CPU-heavy HTTP routes (chemistry tools).
 
 - **memory**: single-process sliding window (default fallback).
 - **redis**: atomic sliding window via Redis sorted set + Lua (shared across API replicas).
@@ -14,7 +13,6 @@ import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from threading import Lock
-from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
 
@@ -58,7 +56,7 @@ class MemorySlidingWindowLimiter(ChemistryRateLimiter):
     def __init__(self, max_requests: int, period_seconds: float) -> None:
         self.max_requests = max_requests
         self.period = period_seconds
-        self._hits: Dict[str, List[float]] = defaultdict(list)
+        self._hits: dict[str, list[float]] = defaultdict(list)
         self._lock = Lock()
 
     def check(self, key: str) -> None:
@@ -140,7 +138,7 @@ class RedisSlidingWindowLimiter(ChemistryRateLimiter):
             )
 
 
-_memory_fallback_cache: Dict[tuple, MemorySlidingWindowLimiter] = {}
+_memory_fallback_cache: dict[tuple, MemorySlidingWindowLimiter] = {}
 _memory_fb_lock = Lock()
 
 
@@ -153,9 +151,9 @@ def _memory_fallback(max_requests: int, period: float) -> MemorySlidingWindowLim
         return _memory_fallback_cache[k]
 
 
-_chemistry_backend: Optional[ChemistryRateLimiter] = None
+_chemistry_backend: ChemistryRateLimiter | None = None
 _chemistry_lock = Lock()
-_chemistry_sig: Optional[tuple] = None
+_chemistry_sig: tuple | None = None
 
 
 def reset_chemistry_rate_limiter() -> None:
@@ -195,8 +193,7 @@ def _build_backend(
 
 
 def get_chemistry_rate_limiter(max_requests: int, period_seconds: float) -> ChemistryRateLimiter:
-    """
-    Singleton limiter for /tools/chemistry routes.
+    """Singleton limiter for /tools/chemistry routes.
 
     Rebuilt when limit, period, backend mode, or Redis URL change (from settings).
     """

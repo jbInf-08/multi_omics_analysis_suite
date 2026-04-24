@@ -1,5 +1,4 @@
-"""
-Optional external MD engines (OpenMM, GROMACS).
+"""Optional external MD engines (OpenMM, GROMACS).
 
 The default stack uses ``molecular_dynamics.MDSimulation``. For production trajectories,
 wire an implementation of :class:`ExternalMDEngine` that shells out to GROMACS or uses OpenMM,
@@ -17,7 +16,7 @@ force field XML, run ``Simulation``, export positions per frame.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Protocol
+from typing import Any, Protocol
 
 
 class ExternalMDEngine(Protocol):
@@ -30,14 +29,13 @@ class ExternalMDEngine(Protocol):
         n_steps: int,
         temperature_k: float,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run MD; return paths to trajectory/energy files and summary metrics."""
         ...
 
 
-def external_md_not_configured(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
-    """
-    Return a structured response when an external engine is requested but not wired.
+def external_md_not_configured(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    """Return a structured response when an external engine is requested but not wired.
 
     Callers should check ``configured`` (False) instead of catching :class:`NotImplementedError`.
     """

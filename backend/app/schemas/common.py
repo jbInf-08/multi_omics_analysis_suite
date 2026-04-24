@@ -1,20 +1,16 @@
-"""
-Common Pydantic Schemas
-"""
+"""Common Pydantic Schemas."""
 
-from typing import Generic, TypeVar, List, Optional, Any
 from datetime import datetime, timezone
-from uuid import UUID
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
-
 
 T = TypeVar("T")
 
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    
+
     model_config = ConfigDict(
         from_attributes=True,
         populate_by_name=True,
@@ -24,8 +20,8 @@ class BaseSchema(BaseModel):
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Paginated response wrapper."""
-    
-    items: List[T]
+
+    items: list[T]
     total: int
     page: int
     page_size: int
@@ -36,11 +32,11 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class StatusResponse(BaseModel):
     """Status response."""
-    
+
     status: str
     message: str
     timestamp: datetime = None
-    
+
     def __init__(self, **data):
         if "timestamp" not in data:
             data["timestamp"] = datetime.now(timezone.utc)
@@ -49,12 +45,12 @@ class StatusResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Error response."""
-    
+
     detail: str
-    error_code: Optional[str] = None
-    error_type: Optional[str] = None
+    error_code: str | None = None
+    error_type: str | None = None
     timestamp: datetime = None
-    
+
     def __init__(self, **data):
         if "timestamp" not in data:
             data["timestamp"] = datetime.now(timezone.utc)
@@ -63,22 +59,22 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
-    
+
     status: str
     version: str
     service: str
-    uptime: Optional[float] = None
-    components: Optional[dict] = None
+    uptime: float | None = None
+    components: dict | None = None
 
 
 class TaskResponse(BaseModel):
     """Background task response."""
-    
+
     task_id: str
     status: str
     progress: float = 0.0
-    result: Optional[Any] = None
-    error: Optional[str] = None
+    result: Any | None = None
+    error: str | None = None
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None

@@ -1,5 +1,4 @@
-"""
-Multi-Omics Analysis Suite Test Package
+"""Multi-Omics Analysis Suite Test Package.
 =======================================
 
 Comprehensive test suite including:

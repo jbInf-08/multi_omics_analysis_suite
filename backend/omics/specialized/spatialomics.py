@@ -1,5 +1,4 @@
-"""
-Spatialomics Module
+"""Spatialomics Module.
 ==================
 
 Analysis module for spatial transcriptomics and proteomics data.
@@ -7,7 +6,7 @@ Analysis module for spatial transcriptomics and proteomics data.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -57,7 +56,7 @@ class SpatialomicsModule(OmicsModuleBase):
         return "Spatial transcriptomics and proteomics analysis with tissue context"
 
     @property
-    def supported_formats(self) -> List[str]:
+    def supported_formats(self) -> list[str]:
         return ["h5ad", "csv", "mtx", "h5", "visium", "xenium"]
 
     def load_data(self, source: DataSource) -> OmicsData:
@@ -66,7 +65,7 @@ class SpatialomicsModule(OmicsModuleBase):
             raise ValueError("spatialomics expects source_type=file with path")
 
         fmt = (source.format or "csv").lower()
-        spatial_coords: Optional[pd.DataFrame] = None
+        spatial_coords: pd.DataFrame | None = None
         meta = source.metadata or {}
         coords_path = meta.get("spatial_coords_csv") or meta.get("metadata_path")
 
@@ -90,7 +89,9 @@ class SpatialomicsModule(OmicsModuleBase):
                 )
                 if "spatial" in adata.obsm:
                     xy = np.asarray(adata.obsm["spatial"])[:, :2]
-                    spatial_coords = pd.DataFrame(xy, index=raw.index, columns=["spatial_x", "spatial_y"])
+                    spatial_coords = pd.DataFrame(
+                        xy, index=raw.index, columns=["spatial_x", "spatial_y"]
+                    )
             except ImportError:
                 raw = pd.DataFrame()
         else:
@@ -101,7 +102,9 @@ class SpatialomicsModule(OmicsModuleBase):
             if not {"spatial_x", "spatial_y"}.issubset(spatial_coords.columns):
                 # allow x,y naming
                 if {"x", "y"}.issubset(spatial_coords.columns):
-                    spatial_coords = spatial_coords.rename(columns={"x": "spatial_x", "y": "spatial_y"})
+                    spatial_coords = spatial_coords.rename(
+                        columns={"x": "spatial_x", "y": "spatial_y"}
+                    )
 
         if raw.empty:
             return OmicsData(
@@ -128,7 +131,7 @@ class SpatialomicsModule(OmicsModuleBase):
             source=source,
         )
 
-    def preprocess(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> OmicsData:
+    def preprocess(self, data: OmicsData, params: dict[str, Any] | None = None) -> OmicsData:
         """Filter low-expression spots and rare genes."""
         if data.data.empty:
             return data
@@ -150,7 +153,7 @@ class SpatialomicsModule(OmicsModuleBase):
             preprocessing_history=data.preprocessing_history + ["preprocess()"],
         )
 
-    def quality_control(self, data: OmicsData, params: Optional[Dict[str, Any]] = None) -> QCReport:
+    def quality_control(self, data: OmicsData, params: dict[str, Any] | None = None) -> QCReport:
         if data.data.empty:
             return QCReport(
                 passed=False,
@@ -158,8 +161,18 @@ class SpatialomicsModule(OmicsModuleBase):
             )
         df = data.data
         metrics = [
-            QCMetric(name="total_spots", value=float(df.shape[0]), threshold=100, passed=df.shape[0] >= 100),
-            QCMetric(name="total_genes", value=float(df.shape[1]), threshold=1000, passed=df.shape[1] >= 1000),
+            QCMetric(
+                name="total_spots",
+                value=float(df.shape[0]),
+                threshold=100,
+                passed=df.shape[0] >= 100,
+            ),
+            QCMetric(
+                name="total_genes",
+                value=float(df.shape[1]),
+                threshold=1000,
+                passed=df.shape[1] >= 1000,
+            ),
             QCMetric(
                 name="median_genes_per_spot",
                 value=float((df > 0).sum(axis=1).median()),
@@ -179,7 +192,7 @@ class SpatialomicsModule(OmicsModuleBase):
         self,
         data: OmicsData,
         method: str = "log_normalize",
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> OmicsData:
         if data.data.empty:
             return data
@@ -202,7 +215,7 @@ class SpatialomicsModule(OmicsModuleBase):
             preprocessing_history=data.preprocessing_history + [f"normalize({m})"],
         )
 
-    def _spatial_coords_array(self, data: OmicsData) -> Optional[np.ndarray]:
+    def _spatial_coords_array(self, data: OmicsData) -> np.ndarray | None:
         sm = data.sample_metadata
         if sm is None or sm.empty:
             return None
@@ -213,13 +226,17 @@ class SpatialomicsModule(OmicsModuleBase):
     def analyze(self, data: OmicsData, params: AnalysisParams) -> AnalysisResult:
         analysis_type = params.analysis_type
         if data.data.empty:
-            return AnalysisResult(analysis_type=analysis_type, status="failed", data={}, errors=["empty dataset"])
+            return AnalysisResult(
+                analysis_type=analysis_type, status="failed", data={}, errors=["empty dataset"]
+            )
 
         if analysis_type == "spatial_clustering":
             X = data.data.values
             coords = self._spatial_coords_array(data)
             if coords is not None and coords.shape[0] == X.shape[0]:
-                Xf = np.hstack([StandardScaler().fit_transform(X), StandardScaler().fit_transform(coords)])
+                Xf = np.hstack(
+                    [StandardScaler().fit_transform(X), StandardScaler().fit_transform(coords)]
+                )
             else:
                 Xf = StandardScaler().fit_transform(X)
             k = int(params.get("n_clusters", 5))
@@ -246,10 +263,7 @@ class SpatialomicsModule(OmicsModuleBase):
                 for g in df.columns[: min(200, df.shape[1])]:
                     x = df[g].values.astype(float)
                     lag = np.array([x[idx[1:]].mean() for idx in neigh])
-                    if np.std(x) < 1e-9:
-                        mi = 0.0
-                    else:
-                        mi = float(np.corrcoef(x, lag)[0, 1])
+                    mi = 0.0 if np.std(x) < 1e-09 else float(np.corrcoef(x, lag)[0, 1])
                     rows.append({"gene": g, "morans_i": mi, "pvalue": max(1e-6, 1 - abs(mi))})
             else:
                 mu = df.mean(axis=0)
@@ -275,8 +289,8 @@ class SpatialomicsModule(OmicsModuleBase):
     def visualize(
         self,
         result: AnalysisResult,
-        plot_types: Optional[List[str]] = None,
-    ) -> List[Visualization]:
+        plot_types: list[str] | None = None,
+    ) -> list[Visualization]:
         payload = result.data.get("clusters") or result.data.get("svg") or result.data
         return [
             Visualization(
@@ -287,12 +301,19 @@ class SpatialomicsModule(OmicsModuleBase):
             )
         ]
 
-    def get_available_pipelines(self) -> List[Pipeline]:
+    def get_available_pipelines(self) -> list[Pipeline]:
         return [
             Pipeline(
                 name="spatial_transcriptomics",
                 description="Complete spatial transcriptomics workflow",
-                steps=["load", "qc", "normalize", "spatial_clustering", "svg_detection", "visualization"],
+                steps=[
+                    "load",
+                    "qc",
+                    "normalize",
+                    "spatial_clustering",
+                    "svg_detection",
+                    "visualization",
+                ],
             ),
             Pipeline(
                 name="tissue_segmentation",
@@ -301,17 +322,23 @@ class SpatialomicsModule(OmicsModuleBase):
             ),
         ]
 
-    def get_available_analyses(self) -> List[AnalysisDefinition]:
+    def get_available_analyses(self) -> list[AnalysisDefinition]:
         return [
             AnalysisDefinition(
                 name="spatial_clustering",
                 description="Cluster spots based on spatial and expression patterns",
             ),
-            AnalysisDefinition(name="spatially_variable_genes", description="Identify spatially variable genes"),
-            AnalysisDefinition(name="cell_type_deconvolution", description="Deconvolve cell types from spots"),
+            AnalysisDefinition(
+                name="spatially_variable_genes", description="Identify spatially variable genes"
+            ),
+            AnalysisDefinition(
+                name="cell_type_deconvolution", description="Deconvolve cell types from spots"
+            ),
             AnalysisDefinition(
                 name="ligand_receptor_analysis",
                 description="Spatial ligand-receptor interaction analysis",
             ),
-            AnalysisDefinition(name="spatial_autocorrelation", description="Moran's I and spatial statistics"),
+            AnalysisDefinition(
+                name="spatial_autocorrelation", description="Moran's I and spatial statistics"
+            ),
         ]

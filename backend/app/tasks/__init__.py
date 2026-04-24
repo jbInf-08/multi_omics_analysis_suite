@@ -1,3 +1,1 @@
-"""
-Celery Background Tasks
-"""
+"""Celery Background Tasks."""

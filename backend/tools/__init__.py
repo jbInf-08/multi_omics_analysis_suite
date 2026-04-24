@@ -1,5 +1,4 @@
-"""
-Bioinformatics Tools Integration
+"""Bioinformatics Tools Integration.
 ================================
 
 Integration with external bioinformatics tools:
@@ -10,8 +9,8 @@ Integration with external bioinformatics tools:
 
 from backend.tools.galaxy_integration import (
     GalaxyClient,
-    GalaxyWorkflow,
     GalaxyConfig,
+    GalaxyWorkflow,
 )
 from backend.tools.igv_integration import (
     IGVController,

@@ -1,5 +1,4 @@
-"""
-Data Collection Framework
+"""Data Collection Framework.
 =========================
 
 Comprehensive data collection system with 100+ source collectors:
@@ -10,13 +9,13 @@ Comprehensive data collection system with 100+ source collectors:
 
 from backend.data_collection.base_collector import (
     BaseCollector,
-    CollectorConfig,
     CollectionResult,
+    CollectorConfig,
     DataSource,
 )
 from backend.data_collection.master_orchestrator import (
-    MasterOrchestrator,
     CollectionPlan,
+    MasterOrchestrator,
     OrchestratorConfig,
 )
 

@@ -1,5 +1,4 @@
-"""
-Pathway Analysis Module
+"""Pathway Analysis Module.
 =======================
 
 Comprehensive pathway analysis including:
@@ -10,17 +9,15 @@ Comprehensive pathway analysis including:
 - Network-based pathway analysis
 """
 
+import logging
+import warnings
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+import gseapy as gp
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, field
-from enum import Enum
-import logging
-from pathlib import Path
-import gseapy as gp
-from gseapy import Biomart
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -29,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 class PathwayDatabase(str, Enum):
     """Available pathway databases."""
+
     KEGG = "KEGG_2021_Human"
     REACTOME = "Reactome_2022"
     GO_BP = "GO_Biological_Process_2021"
@@ -47,24 +45,26 @@ class PathwayDatabase(str, Enum):
 @dataclass
 class PathwayResult:
     """Result for a single pathway."""
+
     pathway_name: str
     database: str
     enrichment_score: float
-    normalized_score: Optional[float]
+    normalized_score: float | None
     p_value: float
     adjusted_p_value: float
     fdr: float
     n_genes: int
     n_overlap: int
-    genes: List[str]
-    leading_edge: Optional[List[str]] = None
+    genes: list[str]
+    leading_edge: list[str] | None = None
     is_significant: bool = False
-    direction: Optional[str] = None  # "activated" or "suppressed"
+    direction: str | None = None  # "activated" or "suppressed"
 
 
 @dataclass
 class GSEAResult:
     """Results from GSEA analysis."""
+
     term: str
     es: float
     nes: float
@@ -72,14 +72,15 @@ class GSEAResult:
     fdr: float
     gene_set_size: int
     matched_size: int
-    genes: List[str]
-    leading_edge_genes: List[str]
+    genes: list[str]
+    leading_edge_genes: list[str]
     leading_edge_number: int
 
 
 @dataclass
 class ORAResult:
     """Results from ORA analysis."""
+
     term: str
     overlap: int
     gene_set_size: int
@@ -87,34 +88,34 @@ class ORAResult:
     adjusted_p_value: float
     odds_ratio: float
     combined_score: float
-    genes: List[str]
+    genes: list[str]
 
 
 @dataclass
 class PathwayAnalysisResult:
     """Comprehensive pathway analysis results."""
-    gsea_results: Optional[pd.DataFrame]
-    ora_results: Optional[pd.DataFrame]
-    significant_pathways: List[str]
-    top_activated: List[PathwayResult]
-    top_suppressed: List[PathwayResult]
-    databases_used: List[str]
+
+    gsea_results: pd.DataFrame | None
+    ora_results: pd.DataFrame | None
+    significant_pathways: list[str]
+    top_activated: list[PathwayResult]
+    top_suppressed: list[PathwayResult]
+    databases_used: list[str]
     n_pathways_tested: int
     n_significant: int
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
 
 
 class GSEAAnalyzer:
-    """
-    Gene Set Enrichment Analysis (GSEA).
-    
+    """Gene Set Enrichment Analysis (GSEA).
+
     Implements the Subramanian et al. GSEA algorithm
     for identifying enriched pathways in ranked gene lists.
     """
-    
+
     def __init__(
         self,
-        databases: Optional[List[PathwayDatabase]] = None,
+        databases: list[PathwayDatabase] | None = None,
         permutation_num: int = 1000,
         min_size: int = 15,
         max_size: int = 500,
@@ -122,9 +123,8 @@ class GSEAAnalyzer:
         threads: int = 4,
         verbose: bool = True,
     ):
-        """
-        Initialize GSEA analyzer.
-        
+        """Initialize GSEA analyzer.
+
         Args:
             databases: Pathway databases to use
             permutation_num: Number of permutations
@@ -133,6 +133,7 @@ class GSEAAnalyzer:
             seed: Random seed
             threads: Number of threads
             verbose: Verbosity flag
+
         """
         self.databases = databases or [
             PathwayDatabase.KEGG,
@@ -146,39 +147,39 @@ class GSEAAnalyzer:
         self.seed = seed
         self.threads = threads
         self.verbose = verbose
-        
-        self.results_: Optional[Dict[str, pd.DataFrame]] = None
-    
+
+        self.results_: dict[str, pd.DataFrame] | None = None
+
     def run(
         self,
         gene_ranking: pd.Series,
-        custom_gene_sets: Optional[Dict[str, List[str]]] = None,
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Run GSEA on ranked gene list.
-        
+        custom_gene_sets: dict[str, list[str]] | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Run GSEA on ranked gene list.
+
         Args:
             gene_ranking: Series with gene names as index and ranking metric as values
             custom_gene_sets: Optional custom gene sets
-            
+
         Returns:
             Dictionary of results per database
+
         """
         if self.verbose:
             logger.info(f"Running GSEA on {len(gene_ranking)} genes")
-        
+
         # Prepare ranking
         rnk = gene_ranking.reset_index()
         rnk.columns = ["gene", "score"]
         rnk = rnk.sort_values("score", ascending=False)
-        
+
         self.results_ = {}
-        
+
         for database in self.databases:
             try:
                 if self.verbose:
                     logger.info(f"Running GSEA with {database.value}")
-                
+
                 result = gp.prerank(
                     rnk=rnk,
                     gene_sets=database.value,
@@ -189,12 +190,12 @@ class GSEAAnalyzer:
                     seed=self.seed,
                     verbose=False,
                 )
-                
+
                 self.results_[database.value] = result.res2d
-                
+
             except Exception as e:
                 logger.warning(f"GSEA failed for {database.value}: {e}")
-        
+
         # Custom gene sets
         if custom_gene_sets:
             try:
@@ -211,40 +212,43 @@ class GSEAAnalyzer:
                 self.results_["Custom"] = result.res2d
             except Exception as e:
                 logger.warning(f"GSEA failed for custom gene sets: {e}")
-        
+
         return self.results_
-    
+
     def run_from_expression(
         self,
         expression_data: pd.DataFrame,
         class_labels: pd.Series,
-        gene_sets: Optional[Union[str, Dict[str, List[str]]]] = None,
+        gene_sets: str | dict[str, list[str]] | None = None,
         method: str = "signal_to_noise",
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Run GSEA directly from expression data.
-        
+    ) -> dict[str, pd.DataFrame]:
+        """Run GSEA directly from expression data.
+
         Args:
             expression_data: Gene expression matrix (genes x samples)
             class_labels: Class labels for samples
             gene_sets: Gene sets to use
             method: Ranking method
-            
+
         Returns:
             Dictionary of results
+
         """
         if self.verbose:
-            logger.info(f"Running GSEA from expression data")
-        
+            logger.info("Running GSEA from expression data")
+
         self.results_ = {}
-        
+
         gene_sets_to_use = gene_sets or self.databases[0].value
-        
+
         try:
             result = gp.gsea(
                 data=expression_data,
-                gene_sets=gene_sets_to_use if isinstance(gene_sets_to_use, (str, dict)) 
-                         else gene_sets_to_use.value,
+                gene_sets=(
+                    gene_sets_to_use
+                    if isinstance(gene_sets_to_use, (str, dict))
+                    else gene_sets_to_use.value
+                ),
                 cls=class_labels.tolist(),
                 method=method,
                 threads=self.threads,
@@ -254,78 +258,73 @@ class GSEAAnalyzer:
                 seed=self.seed,
                 verbose=False,
             )
-            
+
             db_name = gene_sets_to_use if isinstance(gene_sets_to_use, str) else "custom"
             self.results_[db_name] = result.res2d
-            
+
         except Exception as e:
             logger.warning(f"GSEA from expression failed: {e}")
-        
+
         return self.results_
-    
-    def get_significant_pathways(
-        self, fdr_threshold: float = 0.25
-    ) -> pd.DataFrame:
+
+    def get_significant_pathways(self, fdr_threshold: float = 0.25) -> pd.DataFrame:
         """Get significantly enriched pathways."""
         if self.results_ is None:
             raise ValueError("GSEA not run")
-        
+
         all_results = []
         for db_name, results in self.results_.items():
             df = results.copy()
             df["database"] = db_name
             all_results.append(df)
-        
+
         combined = pd.concat(all_results, ignore_index=True)
         significant = combined[combined["FDR q-val"] < fdr_threshold]
-        
+
         return significant.sort_values("NES", ascending=False)
-    
-    def get_leading_edge_genes(
-        self, pathway_name: str, database: Optional[str] = None
-    ) -> List[str]:
+
+    def get_leading_edge_genes(self, pathway_name: str, database: str | None = None) -> list[str]:
         """Get leading edge genes for a pathway."""
         if self.results_ is None:
             raise ValueError("GSEA not run")
-        
+
         for db_name, results in self.results_.items():
             if database and db_name != database:
                 continue
-            
+
             if pathway_name in results.index:
                 row = results.loc[pathway_name]
                 genes = row.get("Lead_genes", "")
                 if genes:
                     return genes.split(";")
-        
+
         return []
 
 
 class ORAAnalyzer:
-    """
-    Over-Representation Analysis (ORA).
-    
+    """Over-Representation Analysis (ORA).
+
     Tests for enrichment of gene sets in a gene list
     using hypergeometric test.
     """
-    
+
     def __init__(
         self,
-        databases: Optional[List[PathwayDatabase]] = None,
-        background: Optional[List[str]] = None,
+        databases: list[PathwayDatabase] | None = None,
+        background: list[str] | None = None,
         organism: str = "Human",
         cutoff: float = 0.05,
         verbose: bool = True,
     ):
-        """
-        Initialize ORA analyzer.
-        
+        """Initialize ORA analyzer.
+
         Args:
             databases: Pathway databases to use
             background: Background gene list (None for all genes)
             organism: Organism name
             cutoff: Significance cutoff
             verbose: Verbosity flag
+
         """
         self.databases = databases or [
             PathwayDatabase.KEGG,
@@ -336,34 +335,34 @@ class ORAAnalyzer:
         self.organism = organism
         self.cutoff = cutoff
         self.verbose = verbose
-        
-        self.results_: Optional[Dict[str, pd.DataFrame]] = None
-    
+
+        self.results_: dict[str, pd.DataFrame] | None = None
+
     def run(
         self,
-        gene_list: List[str],
-        custom_gene_sets: Optional[Dict[str, List[str]]] = None,
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Run ORA on gene list.
-        
+        gene_list: list[str],
+        custom_gene_sets: dict[str, list[str]] | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Run ORA on gene list.
+
         Args:
             gene_list: List of genes to test
             custom_gene_sets: Optional custom gene sets
-            
+
         Returns:
             Dictionary of results per database
+
         """
         if self.verbose:
             logger.info(f"Running ORA on {len(gene_list)} genes")
-        
+
         self.results_ = {}
-        
+
         for database in self.databases:
             try:
                 if self.verbose:
                     logger.info(f"Running ORA with {database.value}")
-                
+
                 result = gp.enrichr(
                     gene_list=gene_list,
                     gene_sets=database.value,
@@ -372,12 +371,12 @@ class ORAAnalyzer:
                     cutoff=self.cutoff,
                     verbose=False,
                 )
-                
+
                 self.results_[database.value] = result.results
-                
+
             except Exception as e:
                 logger.warning(f"ORA failed for {database.value}: {e}")
-        
+
         # Custom gene sets
         if custom_gene_sets:
             try:
@@ -391,76 +390,68 @@ class ORAAnalyzer:
                 self.results_["Custom"] = result.results
             except Exception as e:
                 logger.warning(f"ORA failed for custom gene sets: {e}")
-        
+
         return self.results_
-    
-    def get_significant_pathways(
-        self, p_value_threshold: float = 0.05
-    ) -> pd.DataFrame:
+
+    def get_significant_pathways(self, p_value_threshold: float = 0.05) -> pd.DataFrame:
         """Get significantly enriched pathways."""
         if self.results_ is None:
             raise ValueError("ORA not run")
-        
+
         all_results = []
         for db_name, results in self.results_.items():
             df = results.copy()
             df["database"] = db_name
             all_results.append(df)
-        
+
         combined = pd.concat(all_results, ignore_index=True)
         significant = combined[combined["Adjusted P-value"] < p_value_threshold]
-        
+
         return significant.sort_values("Combined Score", ascending=False)
-    
-    def get_genes_in_pathway(self, pathway_name: str) -> List[str]:
+
+    def get_genes_in_pathway(self, pathway_name: str) -> list[str]:
         """Get genes overlapping with a pathway."""
         if self.results_ is None:
             raise ValueError("ORA not run")
-        
-        for db_name, results in self.results_.items():
+
+        for _db_name, results in self.results_.items():
             if "Term" in results.columns:
                 match = results[results["Term"] == pathway_name]
                 if not match.empty:
                     genes = match.iloc[0].get("Genes", "")
                     if genes:
                         return genes.split(";")
-        
+
         return []
 
 
 class PathwayAnalysisPipeline:
-    """
-    Comprehensive pathway analysis pipeline.
-    
+    """Comprehensive pathway analysis pipeline.
+
     Integrates GSEA and ORA with multiple databases
     for robust pathway identification.
     """
-    
+
     def __init__(
         self,
         # Analysis options
         run_gsea: bool = True,
         run_ora: bool = True,
-        
         # Database options
-        databases: Optional[List[PathwayDatabase]] = None,
-        
+        databases: list[PathwayDatabase] | None = None,
         # GSEA parameters
         gsea_permutations: int = 1000,
         gsea_min_size: int = 15,
         gsea_max_size: int = 500,
-        
         # Significance thresholds
         gsea_fdr_threshold: float = 0.25,
         ora_pvalue_threshold: float = 0.05,
-        
         # Execution
         threads: int = 4,
         verbose: bool = True,
     ):
-        """
-        Initialize pathway analysis pipeline.
-        
+        """Initialize pathway analysis pipeline.
+
         Args:
             run_gsea: Run GSEA analysis
             run_ora: Run ORA analysis
@@ -472,6 +463,7 @@ class PathwayAnalysisPipeline:
             ora_pvalue_threshold: P-value threshold for ORA
             threads: Number of threads
             verbose: Verbosity flag
+
         """
         self.run_gsea = run_gsea
         self.run_ora = run_ora
@@ -488,38 +480,38 @@ class PathwayAnalysisPipeline:
         self.ora_pvalue_threshold = ora_pvalue_threshold
         self.threads = threads
         self.verbose = verbose
-        
-        self.results_: Optional[PathwayAnalysisResult] = None
-    
+
+        self.results_: PathwayAnalysisResult | None = None
+
     def analyze(
         self,
         # For GSEA
-        gene_ranking: Optional[pd.Series] = None,
+        gene_ranking: pd.Series | None = None,
         # For ORA
-        gene_list: Optional[List[str]] = None,
+        gene_list: list[str] | None = None,
         # Background genes for ORA
-        background: Optional[List[str]] = None,
+        background: list[str] | None = None,
         # Custom gene sets
-        custom_gene_sets: Optional[Dict[str, List[str]]] = None,
+        custom_gene_sets: dict[str, list[str]] | None = None,
     ) -> PathwayAnalysisResult:
-        """
-        Run comprehensive pathway analysis.
-        
+        """Run comprehensive pathway analysis.
+
         Args:
             gene_ranking: Ranked gene list for GSEA (Series with gene names as index)
             gene_list: Gene list for ORA
             background: Background genes for ORA
             custom_gene_sets: Custom gene sets
-            
+
         Returns:
             PathwayAnalysisResult
+
         """
         if self.verbose:
             logger.info("Starting pathway analysis")
-        
+
         gsea_results = None
         ora_results = None
-        
+
         # Run GSEA
         if self.run_gsea and gene_ranking is not None:
             gsea = GSEAAnalyzer(
@@ -532,7 +524,7 @@ class PathwayAnalysisPipeline:
             )
             gsea.run(gene_ranking, custom_gene_sets)
             gsea_results = gsea.get_significant_pathways(self.gsea_fdr_threshold)
-        
+
         # Run ORA
         if self.run_ora and gene_list is not None:
             ora = ORAAnalyzer(
@@ -542,18 +534,18 @@ class PathwayAnalysisPipeline:
             )
             ora.run(gene_list, custom_gene_sets)
             ora_results = ora.get_significant_pathways(self.ora_pvalue_threshold)
-        
+
         # Compile significant pathways
         significant_pathways = set()
         if gsea_results is not None and not gsea_results.empty:
             significant_pathways.update(gsea_results["Term"].tolist())
         if ora_results is not None and not ora_results.empty:
             significant_pathways.update(ora_results["Term"].tolist())
-        
+
         # Get top activated/suppressed
         top_activated = []
         top_suppressed = []
-        
+
         if gsea_results is not None and not gsea_results.empty:
             for _, row in gsea_results.head(20).iterrows():
                 result = PathwayResult(
@@ -574,14 +566,14 @@ class PathwayAnalysisPipeline:
                     top_activated.append(result)
                 else:
                     top_suppressed.append(result)
-        
+
         # Count pathways tested
         n_pathways_tested = 0
         if gsea_results is not None:
             n_pathways_tested += len(gsea_results)
         if ora_results is not None:
             n_pathways_tested += len(ora_results)
-        
+
         self.results_ = PathwayAnalysisResult(
             gsea_results=gsea_results,
             ora_results=ora_results,
@@ -595,34 +587,36 @@ class PathwayAnalysisPipeline:
                 "gsea_permutations": self.gsea_permutations,
                 "gsea_fdr_threshold": self.gsea_fdr_threshold,
                 "ora_pvalue_threshold": self.ora_pvalue_threshold,
-            }
+            },
         )
-        
+
         if self.verbose:
-            logger.info(f"Pathway analysis complete: {len(significant_pathways)} significant pathways")
-        
+            logger.info(
+                f"Pathway analysis complete: {len(significant_pathways)} significant pathways"
+            )
+
         return self.results_
-    
+
     def get_combined_results(self) -> pd.DataFrame:
         """Get combined results from all analyses."""
         if self.results_ is None:
             raise ValueError("Analysis not run")
-        
+
         dfs = []
-        
+
         if self.results_.gsea_results is not None:
             df = self.results_.gsea_results.copy()
             df["method"] = "GSEA"
             dfs.append(df)
-        
+
         if self.results_.ora_results is not None:
             df = self.results_.ora_results.copy()
             df["method"] = "ORA"
             dfs.append(df)
-        
+
         if not dfs:
             return pd.DataFrame()
-        
+
         return pd.concat(dfs, ignore_index=True)
 
 
@@ -634,9 +628,8 @@ def create_gene_ranking_from_de(
     logfc_col: str = "log2_fold_change",
     ranking_method: str = "signed_pvalue",
 ) -> pd.Series:
-    """
-    Create gene ranking from differential expression results.
-    
+    """Create gene ranking from differential expression results.
+
     Args:
         de_results: Differential expression results DataFrame
         gene_col: Gene column name
@@ -647,12 +640,13 @@ def create_gene_ranking_from_de(
             - 'signed_pvalue': sign(logFC) * -log10(p)
             - 'statistic': Use test statistic directly
             - 'logfc': Use log fold change
-            
+
     Returns:
         Series with gene names as index and ranking metric as values
+
     """
     df = de_results.copy()
-    
+
     if ranking_method == "signed_pvalue":
         df["ranking"] = np.sign(df[logfc_col]) * (-np.log10(df[pvalue_col].clip(lower=1e-300)))
     elif ranking_method == "statistic":
@@ -661,30 +655,30 @@ def create_gene_ranking_from_de(
         df["ranking"] = df[logfc_col]
     else:
         raise ValueError(f"Unknown ranking method: {ranking_method}")
-    
+
     # Remove NaN values
     df = df.dropna(subset=["ranking"])
-    
+
     # Create series
     ranking = pd.Series(df["ranking"].values, index=df[gene_col].values)
     ranking = ranking.sort_values(ascending=False)
-    
+
     return ranking
 
 
 def get_pathway_genes(
     pathway_name: str,
     database: PathwayDatabase = PathwayDatabase.KEGG,
-) -> List[str]:
-    """
-    Get genes belonging to a pathway.
-    
+) -> list[str]:
+    """Get genes belonging to a pathway.
+
     Args:
         pathway_name: Name of the pathway
         database: Pathway database
-        
+
     Returns:
         List of gene symbols
+
     """
     try:
         gene_sets = gp.get_library(database.value)
@@ -692,7 +686,7 @@ def get_pathway_genes(
             return gene_sets[pathway_name]
     except Exception as e:
         logger.warning(f"Could not get pathway genes: {e}")
-    
+
     return []
 
 
@@ -701,37 +695,39 @@ def pathway_crosstalk_analysis(
     gene_col: str = "genes",
     min_overlap: int = 3,
 ) -> pd.DataFrame:
-    """
-    Analyze crosstalk between significant pathways.
-    
+    """Analyze crosstalk between significant pathways.
+
     Args:
         pathway_results: DataFrame with pathway results
         gene_col: Column containing gene lists
         min_overlap: Minimum gene overlap
-        
+
     Returns:
         DataFrame with pathway pairs and overlap statistics
+
     """
     pathways = pathway_results["Term"].tolist()
     gene_lists = []
-    
+
     for _, row in pathway_results.iterrows():
         genes = row.get(gene_col, "")
         if isinstance(genes, str):
             genes = genes.split(";") if genes else []
         gene_lists.append(set(genes))
-    
+
     crosstalk = []
     for i in range(len(pathways)):
         for j in range(i + 1, len(pathways)):
             overlap = gene_lists[i] & gene_lists[j]
             if len(overlap) >= min_overlap:
-                crosstalk.append({
-                    "pathway_1": pathways[i],
-                    "pathway_2": pathways[j],
-                    "overlap_count": len(overlap),
-                    "overlap_genes": ";".join(overlap),
-                    "jaccard_index": len(overlap) / len(gene_lists[i] | gene_lists[j]),
-                })
-    
+                crosstalk.append(
+                    {
+                        "pathway_1": pathways[i],
+                        "pathway_2": pathways[j],
+                        "overlap_count": len(overlap),
+                        "overlap_genes": ";".join(overlap),
+                        "jaccard_index": len(overlap) / len(gene_lists[i] | gene_lists[j]),
+                    }
+                )
+
     return pd.DataFrame(crosstalk).sort_values("overlap_count", ascending=False)

@@ -1,27 +1,25 @@
-"""
-Security Hardening
+"""Security Hardening.
 ==================
 
 Rate limiting, input sanitization, secrets management, and audit logging.
 """
 
-from typing import Any, Callable, Dict, List, Optional, TypeVar
-from functools import wraps
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from enum import Enum
-import asyncio
+import contextlib
 import hashlib
 import hmac
+import json
+import logging
 import re
 import secrets
-import logging
-import json
-from uuid import UUID
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from functools import wraps
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from pydantic import BaseModel, validator
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,27 +28,30 @@ logger = logging.getLogger(__name__)
 # Rate Limiting
 # =============================================================================
 
+
 @dataclass
 class RateLimitConfig:
     """Rate limit configuration."""
+
     requests: int  # Number of requests
-    period: int    # Time period in seconds
+    period: int  # Time period in seconds
     burst: int = 0  # Extra burst allowance
 
 
 class RateLimitExceeded(HTTPException):
     """Rate limit exceeded exception."""
+
     def __init__(self, retry_after: int):
         super().__init__(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Rate limit exceeded",
-            headers={"Retry-After": str(retry_after)}
+            headers={"Retry-After": str(retry_after)},
         )
 
 
 class RateLimiter:
     """Token bucket rate limiter with Redis backend."""
-    
+
     # Default rate limits by endpoint type
     DEFAULT_LIMITS = {
         "default": RateLimitConfig(requests=100, period=60),
@@ -59,69 +60,69 @@ class RateLimiter:
         "analysis": RateLimitConfig(requests=20, period=60),
         "api": RateLimitConfig(requests=1000, period=60),
     }
-    
+
     def __init__(self, redis_client=None):
         self.redis = redis_client
-        self._local_cache: Dict[str, List[float]] = {}
-    
+        self._local_cache: dict[str, list[float]] = {}
+
     async def check_rate_limit(
         self,
         key: str,
         limit_type: str = "default",
-        config: Optional[RateLimitConfig] = None,
+        config: RateLimitConfig | None = None,
     ) -> bool:
         """Check if request is within rate limit."""
         config = config or self.DEFAULT_LIMITS.get(limit_type, self.DEFAULT_LIMITS["default"])
-        
+
         if self.redis:
             return await self._check_redis(key, config)
         return self._check_local(key, config)
-    
+
     async def _check_redis(self, key: str, config: RateLimitConfig) -> bool:
         """Check rate limit using Redis."""
         import time
+
         now = time.time()
         window_start = now - config.period
-        
+
         pipe = self.redis.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
         pipe.zadd(key, {str(now): now})
         pipe.zcount(key, window_start, now)
         pipe.expire(key, config.period)
-        
+
         results = await pipe.execute()
         request_count = results[2]
-        
+
         max_requests = config.requests + config.burst
         return request_count <= max_requests
-    
+
     def _check_local(self, key: str, config: RateLimitConfig) -> bool:
         """Check rate limit using local cache (for single instance)."""
         import time
+
         now = time.time()
         window_start = now - config.period
-        
+
         if key not in self._local_cache:
             self._local_cache[key] = []
-        
+
         # Remove old entries
-        self._local_cache[key] = [
-            t for t in self._local_cache[key] if t > window_start
-        ]
-        
+        self._local_cache[key] = [t for t in self._local_cache[key] if t > window_start]
+
         # Check limit
         max_requests = config.requests + config.burst
         if len(self._local_cache[key]) >= max_requests:
             return False
-        
+
         self._local_cache[key].append(now)
         return True
-    
+
     def get_remaining(self, key: str, limit_type: str = "default") -> int:
         """Get remaining requests in current window."""
         config = self.DEFAULT_LIMITS.get(limit_type, self.DEFAULT_LIMITS["default"])
         max_requests = config.requests + config.burst
-        
+
         if key in self._local_cache:
             return max_requests - len(self._local_cache[key])
         return max_requests
@@ -129,9 +130,10 @@ class RateLimiter:
 
 def rate_limit(
     limit_type: str = "default",
-    key_func: Optional[Callable[[Request], str]] = None,
+    key_func: Callable[[Request], str] | None = None,
 ):
     """Rate limiting decorator for FastAPI routes."""
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(request: Request, *args, **kwargs):
@@ -139,7 +141,7 @@ def rate_limit(
             limiter = getattr(request.app.state, "rate_limiter", None)
             if not limiter:
                 limiter = RateLimiter()
-            
+
             # Generate key
             if key_func:
                 key = key_func(request)
@@ -147,15 +149,16 @@ def rate_limit(
                 # Default: IP + endpoint
                 client_ip = request.client.host if request.client else "unknown"
                 key = f"rate:{client_ip}:{request.url.path}"
-            
+
             # Check rate limit
             if not await limiter.check_rate_limit(key, limit_type):
                 config = limiter.DEFAULT_LIMITS.get(limit_type, limiter.DEFAULT_LIMITS["default"])
                 raise RateLimitExceeded(retry_after=config.period)
-            
+
             return await func(request, *args, **kwargs)
-        
+
         return wrapper
+
     return decorator
 
 
@@ -163,116 +166,116 @@ def rate_limit(
 # Input Sanitization
 # =============================================================================
 
+
 class InputSanitizer:
     """Input sanitization utilities."""
-    
+
     # Patterns for dangerous content
-    SCRIPT_PATTERN = re.compile(r'<script[^>]*>.*?</script>', re.IGNORECASE | re.DOTALL)
+    SCRIPT_PATTERN = re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
     SQL_INJECTION_PATTERN = re.compile(
-        r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE)\b)",
-        re.IGNORECASE
+        r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE)\b)", re.IGNORECASE
     )
-    PATH_TRAVERSAL_PATTERN = re.compile(r'\.\./|\.\.\\')
-    NULL_BYTE_PATTERN = re.compile(r'\x00')
-    
+    PATH_TRAVERSAL_PATTERN = re.compile(r"\.\./|\.\.\\")
+    NULL_BYTE_PATTERN = re.compile(r"\x00")
+
     # Allowed filename characters
-    SAFE_FILENAME_PATTERN = re.compile(r'^[\w\-. ]+$')
-    
+    SAFE_FILENAME_PATTERN = re.compile(r"^[\w\-. ]+$")
+
     @classmethod
     def sanitize_string(cls, value: str, max_length: int = 10000) -> str:
         """Sanitize a string input."""
         if not value:
             return value
-        
+
         # Truncate
         value = value[:max_length]
-        
+
         # Remove null bytes
-        value = cls.NULL_BYTE_PATTERN.sub('', value)
-        
+        value = cls.NULL_BYTE_PATTERN.sub("", value)
+
         # Remove script tags
-        value = cls.SCRIPT_PATTERN.sub('', value)
-        
+        value = cls.SCRIPT_PATTERN.sub("", value)
+
         # Escape HTML entities
-        value = value.replace('&', '&amp;')
-        value = value.replace('<', '&lt;')
-        value = value.replace('>', '&gt;')
-        value = value.replace('"', '&quot;')
-        value = value.replace("'", '&#x27;')
-        
+        value = value.replace("&", "&amp;")
+        value = value.replace("<", "&lt;")
+        value = value.replace(">", "&gt;")
+        value = value.replace('"', "&quot;")
+        value = value.replace("'", "&#x27;")
+
         return value
-    
+
     @classmethod
     def sanitize_filename(cls, filename: str) -> str:
         """Sanitize a filename."""
         if not filename:
             return "unnamed"
-        
+
         # Remove path components
-        filename = filename.replace('/', '_').replace('\\', '_')
-        
+        filename = filename.replace("/", "_").replace("\\", "_")
+
         # Remove null bytes
-        filename = cls.NULL_BYTE_PATTERN.sub('', filename)
-        
+        filename = cls.NULL_BYTE_PATTERN.sub("", filename)
+
         # Remove path traversal
-        filename = cls.PATH_TRAVERSAL_PATTERN.sub('', filename)
-        
+        filename = cls.PATH_TRAVERSAL_PATTERN.sub("", filename)
+
         # Keep only safe characters
         safe_chars = []
         for char in filename:
-            if char.isalnum() or char in '.-_ ':
+            if char.isalnum() or char in ".-_ ":
                 safe_chars.append(char)
-        filename = ''.join(safe_chars)
-        
+        filename = "".join(safe_chars)
+
         # Ensure not empty
-        if not filename or filename in ['.', '..']:
+        if not filename or filename in [".", ".."]:
             filename = "unnamed"
-        
+
         # Limit length
         if len(filename) > 255:
-            name, ext = filename.rsplit('.', 1) if '.' in filename else (filename, '')
-            filename = name[:250] + ('.' + ext if ext else '')
-        
+            name, ext = filename.rsplit(".", 1) if "." in filename else (filename, "")
+            filename = name[:250] + ("." + ext if ext else "")
+
         return filename
-    
+
     @classmethod
     def check_sql_injection(cls, value: str) -> bool:
         """Check for potential SQL injection."""
         return bool(cls.SQL_INJECTION_PATTERN.search(value))
-    
+
     @classmethod
     def sanitize_path(cls, path: str, allowed_base: str) -> str:
         """Sanitize a file path, ensuring it stays within allowed base."""
         import os
-        
+
         # Remove null bytes
-        path = cls.NULL_BYTE_PATTERN.sub('', path)
-        
+        path = cls.NULL_BYTE_PATTERN.sub("", path)
+
         # Normalize path
         path = os.path.normpath(path)
-        
+
         # Remove leading slashes
-        path = path.lstrip('/\\')
-        
+        path = path.lstrip("/\\")
+
         # Join with base and normalize
         full_path = os.path.normpath(os.path.join(allowed_base, path))
-        
+
         # Verify it's still under base
         if not full_path.startswith(os.path.normpath(allowed_base)):
             raise ValueError("Path traversal detected")
-        
+
         return full_path
 
 
 class SanitizedInput(BaseModel):
     """Base model with input sanitization."""
-    
+
     class Config:
         # Strip whitespace from strings
         anystr_strip_whitespace = True
-    
-    @validator('*', pre=True)
-    def sanitize_strings(cls, v):
+
+    @validator("*", pre=True)
+    def sanitize_strings(self, v):
         if isinstance(v, str):
             return InputSanitizer.sanitize_string(v)
         return v
@@ -282,40 +285,42 @@ class SanitizedInput(BaseModel):
 # Secrets Management
 # =============================================================================
 
+
 class SecretsManager:
     """Secrets management with support for various backends."""
-    
+
     def __init__(self, backend: str = "env"):
         self.backend = backend
-        self._cache: Dict[str, str] = {}
-    
-    def get_secret(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        self._cache: dict[str, str] = {}
+
+    def get_secret(self, key: str, default: str | None = None) -> str | None:
         """Get a secret value."""
         # Check cache first
         if key in self._cache:
             return self._cache[key]
-        
+
         value = None
-        
+
         if self.backend == "env":
             value = self._get_from_env(key)
         elif self.backend == "vault":
             value = self._get_from_vault(key)
         elif self.backend == "aws":
             value = self._get_from_aws_secrets(key)
-        
+
         if value:
             self._cache[key] = value
             return value
-        
+
         return default
-    
-    def _get_from_env(self, key: str) -> Optional[str]:
+
+    def _get_from_env(self, key: str) -> str | None:
         """Get secret from environment variable."""
         import os
+
         return os.environ.get(key)
-    
-    def _get_from_vault(self, key: str) -> Optional[str]:
+
+    def _get_from_vault(self, key: str) -> str | None:
         """Read a secret from HashiCorp Vault KV v2 when ``VAULT_ADDR`` and ``VAULT_TOKEN`` are set."""
         import os
 
@@ -344,50 +349,41 @@ class SecretsManager:
         except Exception:
             logger.debug("Vault read failed for %s", key, exc_info=True)
         return None
-    
-    def _get_from_aws_secrets(self, key: str) -> Optional[str]:
+
+    def _get_from_aws_secrets(self, key: str) -> str | None:
         """Get secret from AWS Secrets Manager."""
         try:
             import boto3
-            client = boto3.client('secretsmanager')
+
+            client = boto3.client("secretsmanager")
             response = client.get_secret_value(SecretId=key)
-            return response.get('SecretString')
+            return response.get("SecretString")
         except ImportError:
             pass
         except Exception:
             pass
         return None
-    
+
     @staticmethod
     def generate_token(length: int = 32) -> str:
         """Generate a secure random token."""
         return secrets.token_urlsafe(length)
-    
+
     @staticmethod
-    def hash_secret(secret: str, salt: Optional[str] = None) -> str:
+    def hash_secret(secret: str, salt: str | None = None) -> str:
         """Hash a secret value."""
         if salt is None:
             salt = secrets.token_hex(16)
-        
-        hashed = hashlib.pbkdf2_hmac(
-            'sha256',
-            secret.encode(),
-            salt.encode(),
-            100000
-        )
+
+        hashed = hashlib.pbkdf2_hmac("sha256", secret.encode(), salt.encode(), 100000)
         return f"{salt}${hashed.hex()}"
-    
+
     @staticmethod
     def verify_secret(secret: str, hashed: str) -> bool:
         """Verify a secret against its hash."""
         try:
-            salt, hash_value = hashed.split('$')
-            new_hash = hashlib.pbkdf2_hmac(
-                'sha256',
-                secret.encode(),
-                salt.encode(),
-                100000
-            )
+            salt, hash_value = hashed.split("$")
+            new_hash = hashlib.pbkdf2_hmac("sha256", secret.encode(), salt.encode(), 100000)
             return hmac.compare_digest(new_hash.hex(), hash_value)
         except Exception:
             return False
@@ -397,8 +393,10 @@ class SecretsManager:
 # Audit Logging
 # =============================================================================
 
+
 class AuditAction(str, Enum):
     """Audit action types."""
+
     CREATE = "create"
     READ = "read"
     UPDATE = "update"
@@ -414,18 +412,19 @@ class AuditAction(str, Enum):
 @dataclass
 class AuditLogEntry:
     """Audit log entry."""
+
     timestamp: datetime
-    user_id: Optional[str]
+    user_id: str | None
     action: AuditAction
     resource_type: str
-    resource_id: Optional[str]
-    ip_address: Optional[str]
-    user_agent: Optional[str]
-    details: Dict[str, Any] = field(default_factory=dict)
+    resource_id: str | None
+    ip_address: str | None
+    user_agent: str | None
+    details: dict[str, Any] = field(default_factory=dict)
     success: bool = True
-    error_message: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    error_message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -444,33 +443,34 @@ class AuditLogEntry:
 class AuditLogger:
     """Audit logging for compliance and security monitoring."""
 
-    def __init__(self, log_file: Optional[str] = None, db_session=None, max_memory_entries: int = 5000):
+    def __init__(
+        self, log_file: str | None = None, db_session=None, max_memory_entries: int = 5000
+    ):
         self.log_file = log_file
         self.db_session = db_session
         self._max_memory = max(100, int(max_memory_entries))
-        self._memory_entries: List[AuditLogEntry] = []
+        self._memory_entries: list[AuditLogEntry] = []
         self._logger = logging.getLogger("audit")
-        
+
         # Configure file logging if specified
         if log_file:
             handler = logging.FileHandler(log_file)
-            handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            ))
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            )
             self._logger.addHandler(handler)
             self._logger.setLevel(logging.INFO)
-    
+
     async def log(
         self,
         action: AuditAction,
         resource_type: str,
-        resource_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        request: Optional[Request] = None,
-        details: Optional[Dict[str, Any]] = None,
+        resource_id: str | None = None,
+        user_id: str | None = None,
+        request: Request | None = None,
+        details: dict[str, Any] | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """Log an audit event."""
         entry = AuditLogEntry(
@@ -485,7 +485,7 @@ class AuditLogger:
             success=success,
             error_message=error_message,
         )
-        
+
         # Log to file
         self._logger.info(json.dumps(entry.to_dict()))
 
@@ -525,24 +525,24 @@ class AuditLogger:
                     await self.db_session.commit()
         except Exception:
             if hasattr(self.db_session, "rollback"):
-                try:
+                with contextlib.suppress(Exception):
                     await self.db_session.rollback()
-                except Exception:
-                    pass
-            logger.debug("Database audit logging unavailable; entry kept in memory only", exc_info=True)
+            logger.debug(
+                "Database audit logging unavailable; entry kept in memory only", exc_info=True
+            )
 
     async def query_logs(
         self,
-        user_id: Optional[str] = None,
-        action: Optional[AuditAction] = None,
-        resource_type: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        user_id: str | None = None,
+        action: AuditAction | None = None,
+        resource_type: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 100,
-    ) -> List[AuditLogEntry]:
+    ) -> list[AuditLogEntry]:
         """Filter the in-process audit ring (newest first)."""
         rows = list(reversed(self._memory_entries))
-        out: List[AuditLogEntry] = []
+        out: list[AuditLogEntry] = []
         for e in rows:
             if user_id and e.user_id != user_id:
                 continue
@@ -563,27 +563,28 @@ class AuditLogger:
 def audit(
     action: AuditAction,
     resource_type: str,
-    resource_id_param: Optional[str] = None,
+    resource_id_param: str | None = None,
 ):
     """Decorator for auditing route handlers."""
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(request: Request, *args, **kwargs):
             audit_logger = getattr(request.app.state, "audit_logger", None)
             if not audit_logger:
                 audit_logger = AuditLogger()
-            
+
             # Get user ID from request state
             user_id = getattr(request.state, "user_id", None)
-            
+
             # Get resource ID from kwargs if specified
             resource_id = None
             if resource_id_param and resource_id_param in kwargs:
                 resource_id = str(kwargs[resource_id_param])
-            
+
             try:
                 result = await func(request, *args, **kwargs)
-                
+
                 await audit_logger.log(
                     action=action,
                     resource_type=resource_type,
@@ -592,9 +593,9 @@ def audit(
                     request=request,
                     success=True,
                 )
-                
+
                 return result
-                
+
             except Exception as e:
                 await audit_logger.log(
                     action=action,
@@ -606,6 +607,7 @@ def audit(
                     error_message=str(e),
                 )
                 raise
-        
+
         return wrapper
+
     return decorator

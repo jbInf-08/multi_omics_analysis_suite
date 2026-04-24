@@ -1,6 +1,4 @@
-"""
-Integration tests for /api/v1/tools (gene prediction, chemistry).
-"""
+"""Integration tests for /api/v1/tools (gene prediction, chemistry)."""
 
 import pytest
 

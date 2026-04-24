@@ -1,5 +1,4 @@
-"""
-Workflow Orchestration Module
+"""Workflow Orchestration Module.
 =============================
 
 Integration with workflow engines:
@@ -8,19 +7,19 @@ Integration with workflow engines:
 """
 
 from backend.workflows.nextflow_integration import (
-    NextflowRunner,
-    NextflowPipeline,
     NextflowConfig,
+    NextflowPipeline,
+    NextflowRunner,
 )
 from backend.workflows.snakemake_manager import (
+    SnakemakeConfig,
     SnakemakeRunner,
     SnakemakeWorkflow,
-    SnakemakeConfig,
 )
 
 __all__ = [
     "NextflowRunner",
-    "NextflowPipeline", 
+    "NextflowPipeline",
     "NextflowConfig",
     "SnakemakeRunner",
     "SnakemakeWorkflow",

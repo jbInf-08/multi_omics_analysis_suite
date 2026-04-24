@@ -1,5 +1,4 @@
-"""
-Real-time Streaming Module
+"""Real-time Streaming Module.
 ==========================
 
 Kafka-based real-time data processing.
@@ -7,14 +6,14 @@ Kafka-based real-time data processing.
 
 from backend.streaming.kafka_integration import (
     KafkaConfig,
-    KafkaProducer,
     KafkaConsumer,
+    KafkaProducer,
     StreamProcessor,
 )
 
 __all__ = [
     "KafkaConfig",
-    "KafkaProducer", 
+    "KafkaProducer",
     "KafkaConsumer",
     "StreamProcessor",
 ]
