@@ -5,6 +5,7 @@
  * Loading spinners, skeletons, and progress indicators.
  */
 
+import { useLayoutEffect, useRef } from 'react';
 import clsx from 'clsx';
 
 // Spinner component
@@ -193,6 +194,14 @@ export function ProgressBar({
   className,
 }: ProgressBarProps) {
   const clampedProgress = Math.min(100, Math.max(0, progress));
+  const fillRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    fillRef.current?.style.setProperty(
+      '--progress-bar-fill-pct',
+      `${clampedProgress}%`
+    );
+  }, [clampedProgress]);
 
   return (
     <div className={clsx('w-full', className)}>
@@ -208,8 +217,8 @@ export function ProgressBar({
       )}
       <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
         <div
-          className="bg-indigo-600 h-full rounded-full transition-all duration-300 ease-out"
-          style={{ width: `${clampedProgress}%` }}
+          ref={fillRef}
+          className="analysis-progress-bar-fill bg-indigo-600 h-full rounded-full transition-all duration-300 ease-out"
         />
       </div>
     </div>
@@ -224,6 +233,15 @@ interface AnalysisProgressProps {
 }
 
 export function AnalysisProgress({ progress, step, status }: AnalysisProgressProps) {
+  const fillRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    fillRef.current?.style.setProperty(
+      '--progress-bar-fill-pct',
+      `${progress * 100}%`
+    );
+  }, [progress]);
+
   const statusColors = {
     pending: 'text-gray-500',
     running: 'text-indigo-600',
@@ -250,11 +268,11 @@ export function AnalysisProgress({ progress, step, status }: AnalysisProgressPro
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
         <div
+          ref={fillRef}
           className={clsx(
-            'h-full rounded-full transition-all duration-300',
+            'progress-bar-fill h-full rounded-full transition-all duration-300',
             statusBg[status]
           )}
-          style={{ width: `${progress * 100}%` }}
         />
       </div>
       {status === 'running' && (
