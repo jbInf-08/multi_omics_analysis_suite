@@ -195,9 +195,9 @@ omics = "cli.main:app"
 moas = "cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/multi-omics/analysis-suite"
+Homepage = "https://github.com/jbInf-08/multi_omics_analysis_suite"
 Documentation = "https://multi-omics.readthedocs.io"
-Repository = "https://github.com/multi-omics/analysis-suite"
+Repository = "https://github.com/jbInf-08/multi_omics_analysis_suite"
 
 [tool.setuptools.packages.find]
 where = ["."]
