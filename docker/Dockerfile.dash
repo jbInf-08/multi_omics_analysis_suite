@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -e ".[dash]"
+
+# Copy dashboard code
+COPY dashboards/ /app/dashboards/
+
+# Create non-root user
+RUN useradd -m -u 1000 omics && chown -R omics:omics /app
+USER omics
+
+EXPOSE 8050
+
+CMD ["python", "dashboards/app.py"]

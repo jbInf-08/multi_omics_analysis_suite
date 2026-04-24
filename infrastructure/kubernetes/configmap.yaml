@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: moas-config
+  namespace: multi-omics
+data:
+  redis-url: "redis://moas-redis:6379/0"
+  neo4j-url: "bolt://moas-neo4j:7687"
+  kafka-brokers: "moas-kafka:9092"
+  minio-endpoint: "moas-minio:9000"
+  cors-origins: "*"
+  debug: "false"
+  log-level: "INFO"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: moas-secrets
+  namespace: multi-omics
+type: Opaque
+stringData:
+  database-url: "postgresql://moas:CHANGE_ME@moas-postgresql:5432/multi_omics"
+  secret-key: "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"
+  neo4j-password: "CHANGE_ME"
+  minio-access-key: "moas_access"
+  minio-secret-key: "CHANGE_ME_MINIO_SECRET"
