@@ -1,3 +1,1 @@
-"""
-Multi-Omics Dash Dashboards
-"""
+"""Multi-Omics Dash Dashboards."""

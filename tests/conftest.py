@@ -1,20 +1,21 @@
-"""
-Pytest Configuration and Fixtures
+"""Pytest Configuration and Fixtures.
 =================================
 
 Shared fixtures and configuration for all tests.
 """
 
+import asyncio
 import os
 import sys
-import pytest
-import asyncio
+from collections.abc import AsyncGenerator
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
+
 import numpy as np
 import pandas as pd
-from typing import Generator, AsyncGenerator, Dict, Any, List
-from unittest.mock import MagicMock, AsyncMock
-from pathlib import Path
-from uuid import UUID
+import pytest
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -32,6 +33,7 @@ TEST_AUTH_USER_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 # Event Loop Configuration
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create event loop for async tests."""
@@ -44,30 +46,28 @@ def event_loop():
 # Database Fixtures
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def test_database_url() -> str:
     """Get test database URL."""
     return os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql+asyncpg://test:test@localhost:5432/test_omics"
+        "TEST_DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_omics"
     )
 
 
 @pytest.fixture
 async def db_session(test_database_url) -> AsyncGenerator:
     """Create a test database session."""
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
-    
+
     engine = create_async_engine(test_database_url, echo=False)
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
     async with async_session() as session:
         yield session
         await session.rollback()
-    
+
     await engine.dispose()
 
 
@@ -92,8 +92,9 @@ def mock_db_session():
 # Sequence Fixtures
 # ============================================================================
 
+
 @pytest.fixture
-def sample_dna_sequences() -> Dict[str, str]:
+def sample_dna_sequences() -> dict[str, str]:
     """Sample DNA sequences for testing."""
     return {
         "short": "ATGCGATCGATCG",
@@ -108,7 +109,7 @@ def sample_dna_sequences() -> Dict[str, str]:
 
 
 @pytest.fixture
-def sample_protein_sequences() -> Dict[str, str]:
+def sample_protein_sequences() -> dict[str, str]:
     """Sample protein sequences for testing."""
     return {
         "short": "MVLSPADKTNVK",
@@ -126,7 +127,7 @@ def sample_rna_sequence() -> str:
 
 
 @pytest.fixture
-def aligned_sequences() -> List[str]:
+def aligned_sequences() -> list[str]:
     """Pre-aligned sequences for consensus testing."""
     return [
         "ATGCGATCGATCG",
@@ -137,18 +138,18 @@ def aligned_sequences() -> List[str]:
 
 
 @pytest.fixture
-def fastq_reads() -> List[str]:
+def fastq_reads() -> list[str]:
     """Simulated FASTQ reads for assembly testing."""
     # Generate overlapping reads from a reference
     reference = "ATGCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG"
     read_length = 20
     coverage = 10
     reads = []
-    
+
     for _ in range(coverage):
         for i in range(0, len(reference) - read_length + 1, 5):
-            reads.append(reference[i:i + read_length])
-    
+            reads.append(reference[i : i + read_length])
+
     return reads
 
 
@@ -156,12 +157,14 @@ def fastq_reads() -> List[str]:
 # API Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def test_client():
     """Create test client for API tests."""
     from fastapi.testclient import TestClient
+
     from backend.app.main import app
-    
+
     with TestClient(app) as client:
         yield client
 
@@ -169,13 +172,11 @@ def test_client():
 @pytest.fixture
 async def async_test_client():
     """Create async test client for API tests."""
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from backend.app.main import app
-    
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -186,14 +187,12 @@ def auth_user_id() -> UUID:
 
 
 @pytest.fixture
-def auth_headers() -> Dict[str, str]:
+def auth_headers() -> dict[str, str]:
     """Generate authentication headers for API tests."""
     # Create a test JWT token
     from backend.app.core.security import create_access_token
 
-    token = create_access_token(
-        data={"sub": str(TEST_AUTH_USER_ID), "email": "test@example.com"}
-    )
+    token = create_access_token(data={"sub": str(TEST_AUTH_USER_ID), "email": "test@example.com"})
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -217,23 +216,24 @@ def mock_current_user():
 # Analysis Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def expression_matrix() -> pd.DataFrame:
     """Sample expression matrix for statistical testing."""
     np.random.seed(42)
     n_genes = 100
     n_samples = 20
-    
+
     # Create expression data with some differentially expressed genes
     data = np.random.randn(n_genes, n_samples) * 2 + 10
-    
+
     # Add differential expression to first 10 genes
     data[:10, :10] += 3  # Group 1 higher
     data[:10, 10:] -= 1  # Group 2 lower
-    
+
     genes = [f"gene_{i}" for i in range(n_genes)]
     samples = [f"sample_{i}" for i in range(n_samples)]
-    
+
     return pd.DataFrame(data, index=genes, columns=samples)
 
 
@@ -245,7 +245,7 @@ def sample_groups() -> pd.Series:
 
 
 @pytest.fixture
-def vcf_variant_data() -> Dict[str, Any]:
+def vcf_variant_data() -> dict[str, Any]:
     """Sample VCF variant data for testing."""
     return {
         "chrom": "chr1",
@@ -260,7 +260,7 @@ def vcf_variant_data() -> Dict[str, Any]:
         "samples": {
             "sample1": {"GT": "0/1", "DP": 30, "GQ": 99},
             "sample2": {"GT": "1/1", "DP": 25, "GQ": 95},
-        }
+        },
     }
 
 
@@ -268,18 +268,19 @@ def vcf_variant_data() -> Dict[str, Any]:
 # ML Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def classification_dataset():
     """Sample dataset for ML classification testing."""
     np.random.seed(42)
     n_samples = 200
     n_features = 50
-    
+
     X = np.random.randn(n_samples, n_features)
     y = (X[:, 0] + X[:, 1] > 0).astype(int)
-    
+
     feature_names = [f"feature_{i}" for i in range(n_features)]
-    
+
     return X, y, feature_names
 
 
@@ -289,16 +290,17 @@ def regression_dataset():
     np.random.seed(42)
     n_samples = 200
     n_features = 50
-    
+
     X = np.random.randn(n_samples, n_features)
     y = X[:, 0] * 2 + X[:, 1] * 3 + np.random.randn(n_samples) * 0.1
-    
+
     return X, y
 
 
 # ============================================================================
 # File System Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def temp_data_dir(tmp_path) -> Path:
@@ -348,6 +350,7 @@ IIIIIIIIIIIIIIIIIIII
 # Snapshot Configuration
 # ============================================================================
 
+
 @pytest.fixture
 def snapshot_dir() -> Path:
     """Get snapshot directory path."""
@@ -358,6 +361,7 @@ def snapshot_dir() -> Path:
 # ============================================================================
 # Celery Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def celery_config():
@@ -383,17 +387,18 @@ def mock_celery_task():
 # Utility Functions
 # ============================================================================
 
+
 def generate_random_dna(length: int, gc_content: float = 0.5) -> str:
     """Generate random DNA sequence with specified GC content."""
     np.random.seed(None)
     gc_count = int(length * gc_content)
     at_count = length - gc_count
-    
+
     bases = (
-        ["G"] * (gc_count // 2) +
-        ["C"] * (gc_count - gc_count // 2) +
-        ["A"] * (at_count // 2) +
-        ["T"] * (at_count - at_count // 2)
+        ["G"] * (gc_count // 2)
+        + ["C"] * (gc_count - gc_count // 2)
+        + ["A"] * (at_count // 2)
+        + ["T"] * (at_count - at_count // 2)
     )
     np.random.shuffle(bases)
     return "".join(bases)

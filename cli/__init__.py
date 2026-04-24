@@ -1,5 +1,4 @@
-"""
-Multi-Omics Analysis Suite - Command Line Interface
+"""Multi-Omics Analysis Suite - Command Line Interface.
 ===================================================
 
 Powerful CLI tools for multi-omics data analysis.

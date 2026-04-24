@@ -1,15 +1,14 @@
-"""
-Unit Tests for Celery Tasks
+"""Unit Tests for Celery Tasks.
 ===========================
 
 Tests for task logic with mocked dependencies (no real broker).
 Run with CELERY_TASK_ALWAYS_EAGER=true or use mocks.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
-import pandas as pd
+from unittest.mock import patch
+
 import numpy as np
+import pandas as pd
 
 
 class TestIntegrationTasks:

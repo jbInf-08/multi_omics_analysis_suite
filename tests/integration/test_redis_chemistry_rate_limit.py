@@ -1,5 +1,4 @@
-"""
-Integration: Redis Lua sliding window for chemistry tools rate limit.
+"""Integration: Redis Lua sliding window for chemistry tools rate limit.
 
 Requires a reachable ``REDIS_URL`` (GitHub Actions service, or ``docker compose up redis``).
 """
@@ -46,7 +45,9 @@ def redis_url() -> str:
     return url
 
 
-def test_chemistry_rate_limit_redis_lua_enforces_max(redis_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chemistry_rate_limit_redis_lua_enforces_max(
+    redis_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     reset_chemistry_rate_limiter()
     monkeypatch.setattr(settings, "TOOLS_CHEMISTRY_RATE_LIMIT_BACKEND", "redis", raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", redis_url, raising=False)

@@ -1,13 +1,13 @@
-"""
-GraphQL Schema
+"""GraphQL Schema.
 ==============
 
 Strawberry GraphQL schema for the Multi-Omics Analysis Suite.
 """
 
 import asyncio
+import contextlib
 import json
-from typing import AsyncGenerator, List, Optional
+from collections.abc import AsyncGenerator
 from uuid import UUID
 
 import strawberry
@@ -50,7 +50,7 @@ class AnalysisProgressType:
     analysis_id: strawberry.ID
     status: str
     progress: float
-    current_step: Optional[str] = None
+    current_step: str | None = None
 
 
 @strawberry.type
@@ -58,7 +58,7 @@ class Query:
     """GraphQL Query root."""
 
     @strawberry.field
-    async def user(self, id: strawberry.ID) -> Optional[UserType]:
+    async def user(self, id: strawberry.ID) -> UserType | None:
         """Get user by ID."""
         return await get_user(id)
 
@@ -67,74 +67,74 @@ class Query:
         self,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[UserType]:
+    ) -> list[UserType]:
         """Get list of users."""
         return await get_users(limit, offset)
 
     @strawberry.field
-    async def project(self, id: strawberry.ID) -> Optional[ProjectType]:
+    async def project(self, id: strawberry.ID) -> ProjectType | None:
         """Get project by ID."""
         return await get_project(id)
 
     @strawberry.field
     async def projects(
         self,
-        user_id: Optional[strawberry.ID] = None,
-        status: Optional[str] = None,
+        user_id: strawberry.ID | None = None,
+        status: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[ProjectType]:
+    ) -> list[ProjectType]:
         """Get list of projects."""
         return await get_projects(user_id, status, limit, offset)
 
     @strawberry.field
-    async def dataset(self, id: strawberry.ID) -> Optional[DatasetType]:
+    async def dataset(self, id: strawberry.ID) -> DatasetType | None:
         """Get dataset by ID."""
         return await get_dataset(id)
 
     @strawberry.field
     async def datasets(
         self,
-        project_id: Optional[strawberry.ID] = None,
-        omics_type: Optional[str] = None,
+        project_id: strawberry.ID | None = None,
+        omics_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[DatasetType]:
+    ) -> list[DatasetType]:
         """Get list of datasets."""
         return await get_datasets(project_id, omics_type, limit, offset)
 
     @strawberry.field
-    async def analysis(self, id: strawberry.ID) -> Optional[AnalysisType]:
+    async def analysis(self, id: strawberry.ID) -> AnalysisType | None:
         """Get analysis by ID."""
         return await get_analysis(id)
 
     @strawberry.field
     async def analyses(
         self,
-        project_id: Optional[strawberry.ID] = None,
-        status: Optional[str] = None,
+        project_id: strawberry.ID | None = None,
+        status: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[AnalysisType]:
+    ) -> list[AnalysisType]:
         """Get list of analyses."""
         return await get_analyses(project_id, status, limit, offset)
 
     @strawberry.field
     async def omics_modules(
         self,
-        category: Optional[str] = None,
+        category: str | None = None,
         active_only: bool = True,
-    ) -> List[OmicsModuleType]:
+    ) -> list[OmicsModuleType]:
         """Get list of omics modules."""
         return await get_omics_modules(category, active_only)
 
     @strawberry.field
     async def pipelines(
         self,
-        omics_type: Optional[str] = None,
+        omics_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[PipelineType]:
+    ) -> list[PipelineType]:
         """Get list of pipelines."""
         return await get_pipelines(omics_type, limit, offset)
 
@@ -162,8 +162,7 @@ class Subscription:
         info: Info,
         analysis_id: strawberry.ID,
     ) -> AsyncGenerator[AnalysisProgressType, None]:
-        """
-        Subscribe to analysis progress.
+        """Subscribe to analysis progress.
 
         Requires a valid access JWT (HTTP ``Authorization`` or WebSocket ``connection_params``).
         Only the analysis owner receives updates. Merges Redis pub/sub (from Celery) with
@@ -182,10 +181,10 @@ class Subscription:
             return
 
         aid = UUID(str(analysis_id))
-        celery_task_id: Optional[str] = None
+        celery_task_id: str | None = None
         db_status = "unknown"
         db_progress = 0.0
-        owner_id: Optional[str] = None
+        owner_id: str | None = None
 
         async for session in get_async_session():
             try:
@@ -240,10 +239,8 @@ class Subscription:
             except Exception:
                 redis_pubsub = None
                 if redis_client is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         await redis_client.close()
-                    except Exception:
-                        pass
                 redis_client = None
 
         max_iterations = 7200
@@ -274,7 +271,7 @@ class Subscription:
                 ar = AsyncResult(celery_task_id, app=celery_app)
                 state = ar.state or "PENDING"
                 progress = 0.0
-                poll_step: Optional[str] = None
+                poll_step: str | None = None
                 if state == "PROGRESS" and ar.info:
                     cinfo = ar.info if isinstance(ar.info, dict) else {}
                     progress = float(cinfo.get("progress", 0.0))
@@ -312,10 +309,8 @@ class Subscription:
                 except Exception:
                     pass
             if redis_client is not None:
-                try:
+                with contextlib.suppress(Exception):
                     await redis_client.close()
-                except Exception:
-                    pass
 
 
 schema = strawberry.Schema(

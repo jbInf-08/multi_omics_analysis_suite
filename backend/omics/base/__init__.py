@@ -1,22 +1,20 @@
-"""
-Base Omics Module Classes
-"""
+"""Base Omics Module Classes."""
 
 from backend.omics.base.omics_base import (
-    OmicsModuleBase,
-    OmicsCategory,
-    OmicsData,
-    QCMetric,
-    QCReport,
+    AnalysisDefinition,
     AnalysisParams,
     AnalysisResult,
-    Visualization,
-    Pipeline,
-    AnalysisDefinition,
     DataSource,
+    OmicsCategory,
+    OmicsData,
+    OmicsModuleBase,
+    Pipeline,
+    QCMetric,
+    QCReport,
+    Visualization,
 )
+from backend.omics.base.pipeline_base import PipelineBase, PipelineContext, PipelineStep
 from backend.omics.base.registry import OmicsRegistry
-from backend.omics.base.pipeline_base import PipelineBase, PipelineStep, PipelineContext
 
 __all__ = [
     "OmicsModuleBase",

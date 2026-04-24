@@ -1,5 +1,4 @@
-"""
-Alembic Environment Configuration
+"""Alembic Environment Configuration.
 =================================
 
 Database migration environment setup.
@@ -13,12 +12,12 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from backend.app.core.config import settings
 
 # Import models for autogenerate support
 from backend.app.core.database import Base
-from backend.app.core.config import settings
+
 # Import all models to register them with Base.metadata
-from backend.app.models import user, project, dataset, analysis, pipeline
 
 # this is the Alembic Config object
 config = context.config
@@ -40,9 +39,8 @@ config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:
-    """
-    Run migrations in 'offline' mode.
-    
+    """Run migrations in 'offline' mode.
+
     Configures the context with just a URL and not an Engine.
     Calls to context.execute() emit the given string to the script output.
     """

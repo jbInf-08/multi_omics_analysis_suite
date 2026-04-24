@@ -1,5 +1,4 @@
-"""
-Structure → molecular dynamics → molecular docking pipeline.
+"""Structure → molecular dynamics → molecular docking pipeline.
 
 Uses a geometric binding site at the receptor center when cavity detection returns none,
 so docking remains usable with the bundled scoring engine.
@@ -8,7 +7,7 @@ so docking remains usable with the bundled scoring engine.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -41,8 +40,8 @@ class StructureMDDockPipeline:
         self,
         protein: Molecule,
         ligand: Molecule,
-        binding_site: Optional[BindingSite] = None,
-    ) -> Dict[str, Any]:
+        binding_site: BindingSite | None = None,
+    ) -> dict[str, Any]:
         protein = self._copy_molecule(protein, name=protein.name or "receptor")
         ligand = self._copy_molecule(ligand, name=ligand.name or "ligand")
 
@@ -52,7 +51,11 @@ class StructureMDDockPipeline:
         )
         md.initialize(box_size=self.md_box_size, temperature=self.md_temperature)
         md.minimize_energy(max_steps=self.minimize_steps, tolerance=0.5)
-        md.run(n_steps=self.md_steps, save_interval=self.md_save_interval, print_interval=self.md_steps + 1)
+        md.run(
+            n_steps=self.md_steps,
+            save_interval=self.md_save_interval,
+            print_interval=self.md_steps + 1,
+        )
 
         protein.positions = md.state.positions.copy()
 
@@ -105,11 +108,10 @@ class StructureMDDockPipeline:
 def run_structure_md_dock(
     protein_pdb: str,
     ligand_pdb: str,
-    binding_site: Optional[BindingSite] = None,
+    binding_site: BindingSite | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
-    """
-    Run the full pipeline from PDB text.
+) -> dict[str, Any]:
+    """Run the full pipeline from PDB text.
 
     Pipeline tuning kwargs (e.g. ``md_steps``) are forwarded to :class:`StructureMDDockPipeline`.
     """

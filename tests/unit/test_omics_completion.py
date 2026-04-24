@@ -7,7 +7,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 from backend.computational_chemistry.external_md import external_md_not_configured
+from backend.omics._pathway_reference import (
+    PATHWAY_GENE_SETS,
+    hypergeom_enrichment,
+    preranked_gsea_like,
+)
 from backend.omics.base import AnalysisParams, DataSource, OmicsData
 from backend.omics.clinical.immunogenomics import ImmunogenomicsModule
 from backend.omics.core.epigenomics import EpigenomicsModule
@@ -17,7 +23,6 @@ from backend.omics.core.transcriptomics import TranscriptomicsModule
 from backend.omics.integration.data_fusion import LateFusion
 from backend.omics.specialized.singlecell import SingleCellModule
 from backend.omics.specialized.spatialomics import SpatialomicsModule
-from backend.omics._pathway_reference import hypergeom_enrichment, preranked_gsea_like, PATHWAY_GENE_SETS
 
 
 def test_external_md_returns_structured_payload():
@@ -35,7 +40,9 @@ def test_late_fusion_transform_on_raw_matrices():
         data_type="a",
     )
     b = OmicsData(
-        data=pd.DataFrame(np.random.RandomState(1).rand(3, 5), index=samples, columns=list("vwxyz")),
+        data=pd.DataFrame(
+            np.random.RandomState(1).rand(3, 5), index=samples, columns=list("vwxyz")
+        ),
         feature_names=list("vwxyz"),
         sample_names=samples,
         data_type="b",
@@ -67,7 +74,12 @@ def test_single_cell_csv_roundtrip():
     path = Path(tempfile.mkdtemp()) / "sc.csv"
     df.to_csv(path)
     mod = SingleCellModule()
-    src = DataSource(source_type="file", path=str(path), format="csv", metadata={"matrix_orientation": "genes_on_rows"})
+    src = DataSource(
+        source_type="file",
+        path=str(path),
+        format="csv",
+        metadata={"matrix_orientation": "genes_on_rows"},
+    )
     od = mod.load_data(src)
     assert mod.validate_data(od)
     od2 = mod.normalize(od, method="scran")
@@ -80,7 +92,9 @@ def test_spatial_clustering():
     genes = [f"g{i}" for i in range(40)]
     X = rng.poisson(2, size=(len(spots), len(genes)))
     counts = pd.DataFrame(X, index=spots, columns=genes)
-    coords = pd.DataFrame(rng.normal(size=(len(spots), 2)), index=spots, columns=["spatial_x", "spatial_y"])
+    coords = pd.DataFrame(
+        rng.normal(size=(len(spots), 2)), index=spots, columns=["spatial_x", "spatial_y"]
+    )
     p = Path(tempfile.mkdtemp())
     counts.to_csv(p / "c.csv")
     coords.to_csv(p / "xy.csv")
@@ -92,7 +106,9 @@ def test_spatial_clustering():
         metadata={"spatial_coords_csv": str(p / "xy.csv")},
     )
     od = mod.load_data(src)
-    res = mod.analyze(od, AnalysisParams(analysis_type="spatial_clustering", parameters={"n_clusters": 4}))
+    res = mod.analyze(
+        od, AnalysisParams(analysis_type="spatial_clustering", parameters={"n_clusters": 4})
+    )
     assert res.status == "success"
     assert "clusters" in res.data
 
@@ -121,7 +137,9 @@ def test_pharmacogenomics_star_alleles():
         data_type="pharmacogenomics",
     )
     mod = PharmacogenomicsModule()
-    res = mod.analyze(od, AnalysisParams(analysis_type="star_allele_calling", parameters={"genes": ["CYP2C19"]}))
+    res = mod.analyze(
+        od, AnalysisParams(analysis_type="star_allele_calling", parameters={"genes": ["CYP2C19"]})
+    )
     assert res.data["star_alleles"][0]["gene"] == "CYP2C19"
 
 
@@ -129,7 +147,9 @@ def test_epigenomics_bmiq_and_age():
     probes = [f"cg{i}" for i in range(30)]
     samples = ["a", "b"]
     rng = np.random.RandomState(4)
-    beta = pd.DataFrame(rng.uniform(0.1, 0.9, (len(samples), len(probes))), index=samples, columns=probes)
+    beta = pd.DataFrame(
+        rng.uniform(0.1, 0.9, (len(samples), len(probes))), index=samples, columns=probes
+    )
     od = OmicsData(data=beta, feature_names=probes, sample_names=samples, data_type="epigenomics")
     mod = EpigenomicsModule()
     norm = mod.normalize(od, method="bmiq")
@@ -154,7 +174,9 @@ def test_proteomics_and_transcriptomics_enrichment():
     assert pres.data["enriched_pathways"] is not None
 
     tod = OmicsData(
-        data=pd.DataFrame(rng.poisson(10, size=(len(samples), len(feats))), index=samples, columns=feats),
+        data=pd.DataFrame(
+            rng.poisson(10, size=(len(samples), len(feats))), index=samples, columns=feats
+        ),
         feature_names=feats,
         sample_names=samples,
         data_type="transcriptomics",

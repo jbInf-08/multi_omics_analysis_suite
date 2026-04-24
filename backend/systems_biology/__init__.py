@@ -1,20 +1,10 @@
-"""
-Systems Biology Module
+"""Systems Biology Module.
 ======================
 
 Pathway modeling, network analysis, and systems-level analysis tools.
 """
 
 from .boolean import AttractorAnalysis, BooleanNetwork, BooleanSimulation, Regulation
-from .network import (
-    BiologicalNetwork,
-    CommunityDetection,
-    GeneRegulatoryNetwork,
-    MetabolicNetwork,
-    NetworkAnalyzer,
-    ProteinNetwork,
-    SignalingNetwork,
-)
 from .modeling import (
     Bifurcation,
     ODEModel,
@@ -24,6 +14,15 @@ from .modeling import (
     SensitivityAnalysis,
     Species,
     SteadyStateAnalysis,
+)
+from .network import (
+    BiologicalNetwork,
+    CommunityDetection,
+    GeneRegulatoryNetwork,
+    MetabolicNetwork,
+    NetworkAnalyzer,
+    ProteinNetwork,
+    SignalingNetwork,
 )
 from .pathway import (
     MetabolicFluxAnalysis,

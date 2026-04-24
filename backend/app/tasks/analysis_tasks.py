@@ -1,20 +1,18 @@
-"""
-Analysis Background Tasks
+"""Analysis Background Tasks.
 =========================
 
 Celery tasks for running omics analyses in the background.
 """
 
-from typing import Dict, Any, List, Optional
-from uuid import UUID
-from datetime import datetime
 import logging
 import traceback
+from datetime import datetime
+from typing import Any
+from uuid import UUID
 
-from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 
-from backend.app.core.celery_app import celery_app, OmicsTask
+from backend.app.core.celery_app import OmicsTask, celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +21,9 @@ def get_sync_session():
     """Get a synchronous database session for Celery tasks."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
     from backend.app.core.config import settings
-    
+
     # Convert async URL to sync
     sync_url = str(settings.DATABASE_URL).replace("+asyncpg", "")
     engine = create_engine(sync_url)
@@ -32,7 +31,9 @@ def get_sync_session():
     return Session()
 
 
-def update_analysis_status(analysis_id: str, status: str, error_message: str = None, progress: float = None):
+def update_analysis_status(
+    analysis_id: str, status: str, error_message: str = None, progress: float = None
+):
     """Update analysis status in database."""
     from datetime import timezone
 
@@ -56,7 +57,9 @@ def update_analysis_status(analysis_id: str, status: str, error_message: str = N
         session.close()
 
 
-def save_analysis_result(analysis_id: str, result_type: str, data: Dict[str, Any], metadata: Dict[str, Any] = None):
+def save_analysis_result(
+    analysis_id: str, result_type: str, data: dict[str, Any], metadata: dict[str, Any] = None
+):
     """Save analysis result to database."""
     session = get_sync_session()
     try:
@@ -81,7 +84,7 @@ def save_analysis_result(analysis_id: str, result_type: str, data: Dict[str, Any
         session.close()
 
 
-def send_websocket_update(user_id: str, analysis_id: str, data: Dict[str, Any]):
+def send_websocket_update(user_id: str, analysis_id: str, data: dict[str, Any]):
     """Notify WebSocket subscribers and Redis pub/sub listeners of progress."""
     logger.debug("Analysis progress user=%s analysis=%s data=%s", user_id, analysis_id, data)
     try:
@@ -96,10 +99,9 @@ def send_websocket_update(user_id: str, analysis_id: str, data: Dict[str, Any]):
 
 
 @celery_app.task(base=OmicsTask, bind=True, name="run_analysis")
-def run_analysis(self, analysis_id: str, parameters: Dict[str, Any] = None):
-    """
-    Run an analysis as a background task.
-    
+def run_analysis(self, analysis_id: str, parameters: dict[str, Any] = None):
+    """Run an analysis as a background task.
+
     This task orchestrates the analysis workflow:
     1. Load analysis configuration from database
     2. Load and validate input datasets
@@ -108,25 +110,26 @@ def run_analysis(self, analysis_id: str, parameters: Dict[str, Any] = None):
     5. Generate visualizations
     6. Save results to database
     7. Send notifications
-    
+
     Args:
         analysis_id: Analysis ID
         parameters: Analysis parameters (overrides stored parameters)
+
     """
     logger.info(f"Starting analysis {analysis_id}")
     parameters = parameters or {}
-    
+
     try:
         # Update status to running
         update_analysis_status(analysis_id, "running")
         self.update_state(state="PROGRESS", meta={"progress": 0.0, "step": "Initializing"})
-        
+
         # Load analysis configuration
         session = get_sync_session()
         model_analysis_type = None
-        omics_types: List[str] = []
-        input_datasets: List[str] = []
-        stored_params: Dict[str, Any] = {}
+        omics_types: list[str] = []
+        input_datasets: list[str] = []
+        stored_params: dict[str, Any] = {}
         user_id = ""
         try:
             from backend.app.models.analysis import Analysis
@@ -154,32 +157,40 @@ def run_analysis(self, analysis_id: str, parameters: Dict[str, Any] = None):
             )
         if workflow_analysis_type is None:
             workflow_analysis_type = "single_omics"
-        
+
         # Step 1: Load data (20%)
         self.update_state(state="PROGRESS", meta={"progress": 0.1, "step": "Loading datasets"})
         send_websocket_update(user_id, analysis_id, {"progress": 0.1, "step": "Loading datasets"})
-        
+
         datasets = load_datasets(input_datasets)
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 0.2, "step": "Data loaded"})
-        
+
         # Step 2: Quality control (40%)
-        self.update_state(state="PROGRESS", meta={"progress": 0.25, "step": "Running quality control"})
-        send_websocket_update(user_id, analysis_id, {"progress": 0.25, "step": "Running quality control"})
-        
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0.25, "step": "Running quality control"}
+        )
+        send_websocket_update(
+            user_id, analysis_id, {"progress": 0.25, "step": "Running quality control"}
+        )
+
         qc_results = run_quality_control(datasets, omics_types, final_params)
         save_analysis_result(analysis_id, "quality_control", qc_results)
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 0.4, "step": "QC complete"})
-        
+
         # Step 3: Preprocessing (55%)
         self.update_state(state="PROGRESS", meta={"progress": 0.45, "step": "Preprocessing data"})
-        send_websocket_update(user_id, analysis_id, {"progress": 0.45, "step": "Preprocessing data"})
-        
+        send_websocket_update(
+            user_id, analysis_id, {"progress": 0.45, "step": "Preprocessing data"}
+        )
+
         processed_data = preprocess_data(datasets, omics_types, final_params)
-        
-        self.update_state(state="PROGRESS", meta={"progress": 0.55, "step": "Preprocessing complete"})
-        
+
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0.55, "step": "Preprocessing complete"}
+        )
+
         # Step 4: Main analysis (80%)
         self.update_state(
             state="PROGRESS",
@@ -198,29 +209,37 @@ def run_analysis(self, analysis_id: str, parameters: Dict[str, Any] = None):
             parameters=final_params,
         )
         save_analysis_result(analysis_id, "analysis", analysis_results)
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 0.8, "step": "Analysis complete"})
-        
+
         # Step 5: Visualization (95%)
-        self.update_state(state="PROGRESS", meta={"progress": 0.85, "step": "Generating visualizations"})
-        send_websocket_update(user_id, analysis_id, {"progress": 0.85, "step": "Generating visualizations"})
-        
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0.85, "step": "Generating visualizations"}
+        )
+        send_websocket_update(
+            user_id, analysis_id, {"progress": 0.85, "step": "Generating visualizations"}
+        )
+
         visualizations = generate_visualizations(
             analysis_results, str(workflow_analysis_type), final_params
         )
         save_analysis_result(analysis_id, "visualizations", visualizations)
-        
-        self.update_state(state="PROGRESS", meta={"progress": 0.95, "step": "Visualizations complete"})
-        
+
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0.95, "step": "Visualizations complete"}
+        )
+
         # Step 6: Finalize
         self.update_state(state="PROGRESS", meta={"progress": 1.0, "step": "Finalizing"})
-        
+
         # Update status to completed
         update_analysis_status(analysis_id, "completed", progress=1.0)
-        send_websocket_update(user_id, analysis_id, {"progress": 1.0, "step": "Complete", "status": "completed"})
-        
+        send_websocket_update(
+            user_id, analysis_id, {"progress": 1.0, "step": "Complete", "status": "completed"}
+        )
+
         logger.info(f"Analysis {analysis_id} completed successfully")
-        
+
         return {
             "status": "completed",
             "analysis_id": analysis_id,
@@ -229,25 +248,25 @@ def run_analysis(self, analysis_id: str, parameters: Dict[str, Any] = None):
                 "qc_passed": qc_results.get("passed", True),
                 "features_analyzed": analysis_results.get("n_features", 0),
                 "significant_results": analysis_results.get("n_significant", 0),
-            }
+            },
         }
-        
+
     except SoftTimeLimitExceeded:
         logger.error(f"Analysis {analysis_id} exceeded time limit")
         update_analysis_status(analysis_id, "failed", "Analysis exceeded time limit")
         raise
-        
+
     except Exception as e:
         logger.error(f"Analysis {analysis_id} failed: {e}\n{traceback.format_exc()}")
         update_analysis_status(analysis_id, "failed", str(e))
         raise
 
 
-def load_datasets(dataset_ids: List[str]) -> Dict[str, Any]:
+def load_datasets(dataset_ids: list[str]) -> dict[str, Any]:
     """Load dataset metadata and shape from persisted files (same storage as ML tasks)."""
     from backend.app.tasks.ml_tasks import load_dataset_data
 
-    datasets: Dict[str, Any] = {}
+    datasets: dict[str, Any] = {}
     for dataset_id in dataset_ids:
         df = load_dataset_data(dataset_id)
         if df is not None:
@@ -269,11 +288,12 @@ def load_datasets(dataset_ids: List[str]) -> Dict[str, Any]:
     return datasets
 
 
-def run_quality_control(datasets: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_quality_control(datasets: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Run quality control on datasets."""
     import time
+
     time.sleep(0.5)  # Simulate QC
-    
+
     return {
         "passed": True,
         "metrics": {
@@ -287,11 +307,12 @@ def run_quality_control(datasets: Dict, omics_types: List[str], params: Dict) ->
     }
 
 
-def preprocess_data(datasets: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def preprocess_data(datasets: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Preprocess data (normalization, filtering, etc.)."""
     import time
+
     time.sleep(0.5)  # Simulate preprocessing
-    
+
     return {
         "normalized": True,
         "method": params.get("normalization_method", "quantile"),
@@ -300,11 +321,14 @@ def preprocess_data(datasets: Dict, omics_types: List[str], params: Dict) -> Dic
     }
 
 
-def execute_analysis(analysis_type: str, data: Dict, omics_types: List[str], parameters: Dict) -> Dict[str, Any]:
+def execute_analysis(
+    analysis_type: str, data: dict, omics_types: list[str], parameters: dict
+) -> dict[str, Any]:
     """Execute the main analysis based on type."""
     import time
+
     time.sleep(1.0)  # Simulate analysis
-    
+
     # Dispatch to appropriate analysis function based on type
     analysis_dispatch = {
         "differential_expression": run_differential_expression_analysis,
@@ -313,12 +337,14 @@ def execute_analysis(analysis_type: str, data: Dict, omics_types: List[str], par
         "clustering": run_clustering_analysis,
         "integration": run_integration_analysis,
     }
-    
+
     analysis_func = analysis_dispatch.get(analysis_type, run_generic_analysis)
     return analysis_func(data, omics_types, parameters)
 
 
-def run_differential_expression_analysis(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_differential_expression_analysis(
+    data: dict, omics_types: list[str], params: dict
+) -> dict[str, Any]:
     """Run differential expression analysis."""
     return {
         "type": "differential_expression",
@@ -330,7 +356,9 @@ def run_differential_expression_analysis(data: Dict, omics_types: List[str], par
     }
 
 
-def run_pathway_enrichment_analysis(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_pathway_enrichment_analysis(
+    data: dict, omics_types: list[str], params: dict
+) -> dict[str, Any]:
     """Run pathway enrichment analysis."""
     return {
         "type": "pathway_analysis",
@@ -341,7 +369,7 @@ def run_pathway_enrichment_analysis(data: Dict, omics_types: List[str], params: 
     }
 
 
-def run_network_analysis_impl(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_network_analysis_impl(data: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Run network analysis."""
     return {
         "type": "network_analysis",
@@ -352,7 +380,7 @@ def run_network_analysis_impl(data: Dict, omics_types: List[str], params: Dict) 
     }
 
 
-def run_clustering_analysis(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_clustering_analysis(data: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Run clustering analysis."""
     return {
         "type": "clustering",
@@ -362,7 +390,7 @@ def run_clustering_analysis(data: Dict, omics_types: List[str], params: Dict) ->
     }
 
 
-def run_integration_analysis(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_integration_analysis(data: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Run multi-omics integration analysis."""
     return {
         "type": "integration",
@@ -373,7 +401,7 @@ def run_integration_analysis(data: Dict, omics_types: List[str], params: Dict) -
     }
 
 
-def run_generic_analysis(data: Dict, omics_types: List[str], params: Dict) -> Dict[str, Any]:
+def run_generic_analysis(data: dict, omics_types: list[str], params: dict) -> dict[str, Any]:
     """Run generic analysis for unknown types."""
     return {
         "type": "generic",
@@ -382,16 +410,17 @@ def run_generic_analysis(data: Dict, omics_types: List[str], params: Dict) -> Di
     }
 
 
-def generate_visualizations(results: Dict, analysis_type: str, params: Dict) -> Dict[str, Any]:
+def generate_visualizations(results: dict, analysis_type: str, params: dict) -> dict[str, Any]:
     """Generate visualizations for analysis results."""
     import time
+
     time.sleep(0.5)  # Simulate visualization generation
-    
+
     visualizations = {
         "plots": [],
         "tables": [],
     }
-    
+
     # Generate type-specific visualizations
     if analysis_type == "differential_expression":
         visualizations["plots"] = [
@@ -409,7 +438,7 @@ def generate_visualizations(results: Dict, analysis_type: str, params: Dict) -> 
             {"type": "network_graph", "path": f"/results/{analysis_type}/network.html"},
             {"type": "degree_distribution", "path": f"/results/{analysis_type}/degrees.html"},
         ]
-    
+
     return visualizations
 
 
@@ -418,10 +447,9 @@ def run_pipeline(
     self,
     pipeline_id: str,
     run_id: str,
-    parameters: Dict[str, Any] = None,
+    parameters: dict[str, Any] = None,
 ):
-    """
-    Run a pipeline as a background task.
+    """Run a pipeline as a background task.
 
     Each step dict should include a ``type`` key, for example:
     ``gene_prediction``, ``assembly_gene_annotation``, ``structure_md_dock``.
@@ -459,7 +487,7 @@ def run_pipeline(
         run.error_step = None
         session.commit()
 
-        step_outputs: List[Dict[str, Any]] = []
+        step_outputs: list[dict[str, Any]] = []
 
         if not steps:
             run.step_results = []
@@ -532,13 +560,12 @@ def run_differential_expression(
     self,
     dataset_id: str,
     group_column: str,
-    groups: List[str],
+    groups: list[str],
     method: str = "ttest",
-    parameters: Dict[str, Any] = None,
+    parameters: dict[str, Any] = None,
 ):
-    """
-    Run differential expression analysis.
-    
+    """Run differential expression analysis.
+
     Args:
         dataset_id: Dataset ID
         group_column: Column name for grouping
@@ -548,37 +575,39 @@ def run_differential_expression(
             - fdr_threshold: float (default 0.05)
             - log2fc_threshold: float (default 1.0)
             - paired: bool (default False)
-    
+
     Returns:
         Dict with DE results, significant features, and statistics
+
     """
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     from scipy import stats
-    
+
     parameters = parameters or {}
-    
+
     try:
         self.update_state(state="PROGRESS", meta={"progress": 0.0, "step": "Loading data"})
         logger.info(f"Running DE analysis with method={method}")
-        
+
         # Load dataset
         datasets = load_datasets([dataset_id])
         if not datasets:
             raise ValueError(f"Dataset {dataset_id} not found")
-        
+
         # Get the actual data
         session = get_sync_session()
         try:
             from backend.app.models.dataset import Dataset
+
             dataset = session.query(Dataset).filter(Dataset.id == UUID(dataset_id)).first()
             if not dataset or not dataset.storage_path:
                 raise ValueError(f"Dataset {dataset_id} has no data")
-            
+
             df = pd.read_parquet(dataset.storage_path)
         finally:
             session.close()
-        
+
         # Check group column
         if group_column not in df.columns:
             # Check if it's in sample metadata
@@ -595,45 +624,42 @@ def run_differential_expression(
                     raise ValueError(f"Group column '{group_column}' not found")
             finally:
                 session.close()
-        
+
         # Filter to specified groups
         if len(groups) != 2:
             raise ValueError("Exactly 2 groups required for DE analysis")
-        
+
         group_mask = df[group_column].isin(groups)
         df_filtered = df[group_mask]
-        
+
         group1_mask = df_filtered[group_column] == groups[0]
         group2_mask = df_filtered[group_column] == groups[1]
-        
+
         # Get numeric features only
         numeric_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
         if group_column in numeric_cols:
             numeric_cols.remove(group_column)
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 0.3, "step": f"Running {method}"})
-        
+
         # Run DE analysis
         results = []
         group1_data = df_filtered.loc[group1_mask, numeric_cols]
         group2_data = df_filtered.loc[group2_mask, numeric_cols]
-        
+
         for feature in numeric_cols:
             g1 = group1_data[feature].dropna().values
             g2 = group2_data[feature].dropna().values
-            
+
             if len(g1) < 2 or len(g2) < 2:
                 continue
-            
+
             # Calculate statistics
             mean1, mean2 = g1.mean(), g2.mean()
-            
+
             # Log2 fold change
-            if mean1 > 0 and mean2 > 0:
-                log2fc = np.log2(mean2 / mean1)
-            else:
-                log2fc = 0
-            
+            log2fc = np.log2(mean2 / mean1) if mean1 > 0 and mean2 > 0 else 0
+
             # Statistical test
             if method == "ttest":
                 stat, pval = stats.ttest_ind(g1, g2)
@@ -643,42 +669,46 @@ def run_differential_expression(
                 stat, pval = stats.ttest_ind(g1, g2, equal_var=False)
             else:
                 stat, pval = stats.ttest_ind(g1, g2)
-            
-            results.append({
-                "feature": feature,
-                "mean_group1": float(mean1),
-                "mean_group2": float(mean2),
-                "log2_fold_change": float(log2fc),
-                "statistic": float(stat),
-                "p_value": float(pval) if not np.isnan(pval) else 1.0,
-            })
-        
+
+            results.append(
+                {
+                    "feature": feature,
+                    "mean_group1": float(mean1),
+                    "mean_group2": float(mean2),
+                    "log2_fold_change": float(log2fc),
+                    "statistic": float(stat),
+                    "p_value": float(pval) if not np.isnan(pval) else 1.0,
+                }
+            )
+
         self.update_state(state="PROGRESS", meta={"progress": 0.7, "step": "Computing FDR"})
-        
+
         # FDR correction
         from scipy.stats import false_discovery_control
+
         p_values = [r["p_value"] for r in results]
         if p_values:
             q_values = false_discovery_control(p_values, method="bh")
             for i, r in enumerate(results):
                 r["q_value"] = float(q_values[i])
-        
+
         # Sort by p-value
         results.sort(key=lambda x: x["p_value"])
-        
+
         # Filter significant
         fdr_threshold = parameters.get("fdr_threshold", 0.05)
         log2fc_threshold = parameters.get("log2fc_threshold", 1.0)
-        
+
         significant = [
-            r for r in results
+            r
+            for r in results
             if r.get("q_value", 1) < fdr_threshold and abs(r["log2_fold_change"]) > log2fc_threshold
         ]
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 1.0, "step": "Complete"})
-        
+
         logger.info(f"DE analysis completed: {len(significant)} significant features")
-        
+
         return {
             "status": "completed",
             "method": method,
@@ -692,10 +722,11 @@ def run_differential_expression(
             "group1_samples": int(group1_mask.sum()),
             "group2_samples": int(group2_mask.sum()),
         }
-        
+
     except Exception as e:
         logger.error(f"DE analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
         return {
             "status": "failed",
@@ -707,16 +738,15 @@ def run_differential_expression(
 @celery_app.task(base=OmicsTask, bind=True, name="run_pathway_analysis")
 def run_pathway_analysis(
     self,
-    gene_list: List[str] = None,
-    gene_ranking: Dict[str, float] = None,
+    gene_list: list[str] = None,
+    gene_ranking: dict[str, float] = None,
     organism: str = "human",
     database: str = "kegg",
     method: str = "ora",
-    parameters: Dict[str, Any] = None,
+    parameters: dict[str, Any] = None,
 ):
-    """
-    Run pathway enrichment analysis.
-    
+    """Run pathway enrichment analysis.
+
     Args:
         gene_list: List of genes for ORA
         gene_ranking: Dict mapping gene to score for GSEA
@@ -726,25 +756,25 @@ def run_pathway_analysis(
         parameters: Additional parameters
             - fdr_threshold: float (default 0.25 for GSEA, 0.05 for ORA)
             - permutations: int (for GSEA, default 1000)
-    
+
     Returns:
         Dict with enriched pathways and statistics
+
     """
     import pandas as pd
-    
+
     parameters = parameters or {}
-    
+
     try:
         self.update_state(state="PROGRESS", meta={"progress": 0.0, "step": "Loading pathway data"})
         logger.info(f"Running pathway analysis with method={method}, database={database}")
-        
+
         from backend.analysis.pathway_analysis import (
-            PathwayAnalysisPipeline,
-            PathwayDatabase,
             GSEAAnalyzer,
             ORAAnalyzer,
+            PathwayDatabase,
         )
-        
+
         # Map database string to enum
         db_map = {
             "kegg": PathwayDatabase.KEGG,
@@ -756,17 +786,19 @@ def run_pathway_analysis(
             "oncogenic": PathwayDatabase.ONCOGENIC,
             "wikipathways": PathwayDatabase.WIKIPATHWAYS,
         }
-        
+
         pathway_db = db_map.get(database.lower(), PathwayDatabase.KEGG)
-        
-        self.update_state(state="PROGRESS", meta={"progress": 0.2, "step": f"Running {method.upper()}"})
-        
+
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0.2, "step": f"Running {method.upper()}"}
+        )
+
         results = {}
-        
+
         if method.lower() == "gsea" and gene_ranking:
             # GSEA requires ranked genes
             ranking_series = pd.Series(gene_ranking)
-            
+
             gsea = GSEAAnalyzer(
                 databases=[pathway_db],
                 permutation_num=parameters.get("permutations", 1000),
@@ -774,25 +806,27 @@ def run_pathway_analysis(
                 max_size=parameters.get("max_size", 500),
                 threads=parameters.get("threads", 4),
             )
-            
-            gsea_results = gsea.run(ranking_series)
-            
-            self.update_state(state="PROGRESS", meta={"progress": 0.7, "step": "Processing results"})
-            
+
+            gsea.run(ranking_series)
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 0.7, "step": "Processing results"}
+            )
+
             # Get significant pathways
             fdr_threshold = parameters.get("fdr_threshold", 0.25)
             significant = gsea.get_significant_pathways(fdr_threshold)
-            
+
             if not significant.empty:
                 results["pathways"] = significant.head(50).to_dict(orient="records")
                 results["n_significant"] = len(significant)
             else:
                 results["pathways"] = []
                 results["n_significant"] = 0
-            
+
             results["method"] = "GSEA"
             results["n_genes_ranked"] = len(gene_ranking)
-            
+
         elif method.lower() == "ora" and gene_list:
             # ORA for gene list
             ora = ORAAnalyzer(
@@ -800,40 +834,45 @@ def run_pathway_analysis(
                 organism="Human" if organism.lower() == "human" else organism,
                 cutoff=parameters.get("fdr_threshold", 0.05),
             )
-            
-            ora_results = ora.run(gene_list)
-            
-            self.update_state(state="PROGRESS", meta={"progress": 0.7, "step": "Processing results"})
-            
+
+            ora.run(gene_list)
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 0.7, "step": "Processing results"}
+            )
+
             # Get significant pathways
             significant = ora.get_significant_pathways(parameters.get("fdr_threshold", 0.05))
-            
+
             if not significant.empty:
                 results["pathways"] = significant.head(50).to_dict(orient="records")
                 results["n_significant"] = len(significant)
             else:
                 results["pathways"] = []
                 results["n_significant"] = 0
-            
+
             results["method"] = "ORA"
             results["n_genes_input"] = len(gene_list)
-            
+
         else:
             raise ValueError("Must provide gene_list for ORA or gene_ranking for GSEA")
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 1.0, "step": "Complete"})
-        
-        logger.info(f"Pathway analysis completed: {results.get('n_significant', 0)} significant pathways")
-        
+
+        logger.info(
+            f"Pathway analysis completed: {results.get('n_significant', 0)} significant pathways"
+        )
+
         return {
             "status": "completed",
             "database": database,
             **results,
         }
-        
+
     except Exception as e:
         logger.error(f"Pathway analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
         return {
             "status": "failed",
@@ -846,14 +885,13 @@ def run_pathway_analysis(
 @celery_app.task(base=OmicsTask, bind=True, name="run_network_analysis")
 def run_network_analysis(
     self,
-    gene_list: List[str] = None,
+    gene_list: list[str] = None,
     dataset_id: str = None,
     network_type: str = "coexpression",
-    parameters: Dict[str, Any] = None,
+    parameters: dict[str, Any] = None,
 ):
-    """
-    Run network analysis.
-    
+    """Run network analysis.
+
     Args:
         gene_list: List of genes (for PPI network)
         dataset_id: Dataset ID (for coexpression network)
@@ -862,56 +900,60 @@ def run_network_analysis(
             - correlation_threshold: float (default 0.7)
             - correlation_method: str (pearson, spearman)
             - n_top_edges: int (max edges to return)
-    
+
     Returns:
         Dict with network statistics and top edges
+
     """
-    import pandas as pd
     import numpy as np
-    
+    import pandas as pd
+
     parameters = parameters or {}
-    
+
     try:
         self.update_state(state="PROGRESS", meta={"progress": 0.0, "step": "Building network"})
         logger.info(f"Running network analysis: type={network_type}")
-        
+
         results = {
             "network_type": network_type,
             "nodes": [],
             "edges": [],
             "statistics": {},
         }
-        
+
         if network_type == "coexpression" and dataset_id:
             # Build co-expression network from dataset
             session = get_sync_session()
             try:
                 from backend.app.models.dataset import Dataset
+
                 dataset = session.query(Dataset).filter(Dataset.id == UUID(dataset_id)).first()
                 if not dataset or not dataset.storage_path:
                     raise ValueError(f"Dataset {dataset_id} not found")
-                
+
                 df = pd.read_parquet(dataset.storage_path)
             finally:
                 session.close()
-            
+
             # Filter to numeric columns
             numeric_df = df.select_dtypes(include=[np.number])
-            
+
             # Filter to gene list if provided
             if gene_list:
                 available_genes = [g for g in gene_list if g in numeric_df.columns]
                 numeric_df = numeric_df[available_genes]
-            
-            self.update_state(state="PROGRESS", meta={"progress": 0.3, "step": "Computing correlations"})
-            
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 0.3, "step": "Computing correlations"}
+            )
+
             # Compute correlation matrix
             method = parameters.get("correlation_method", "pearson")
             corr_matrix = numeric_df.corr(method=method)
-            
+
             # Apply threshold
             threshold = parameters.get("correlation_threshold", 0.7)
-            
+
             # Extract edges
             edges = []
             n_genes = len(corr_matrix.columns)
@@ -919,72 +961,85 @@ def run_network_analysis(
                 for j in range(i + 1, n_genes):
                     corr = corr_matrix.iloc[i, j]
                     if abs(corr) >= threshold:
-                        edges.append({
-                            "source": corr_matrix.columns[i],
-                            "target": corr_matrix.columns[j],
-                            "weight": float(corr),
-                            "abs_weight": float(abs(corr)),
-                        })
-            
+                        edges.append(
+                            {
+                                "source": corr_matrix.columns[i],
+                                "target": corr_matrix.columns[j],
+                                "weight": float(corr),
+                                "abs_weight": float(abs(corr)),
+                            }
+                        )
+
             # Sort by absolute weight
             edges.sort(key=lambda x: x["abs_weight"], reverse=True)
-            
+
             # Limit edges
             n_top = parameters.get("n_top_edges", 1000)
             edges = edges[:n_top]
-            
+
             # Get unique nodes
             nodes = list(set([e["source"] for e in edges] + [e["target"] for e in edges]))
-            
-            self.update_state(state="PROGRESS", meta={"progress": 0.7, "step": "Computing statistics"})
-            
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 0.7, "step": "Computing statistics"}
+            )
+
             # Compute statistics
             if edges:
                 node_degrees = {}
                 for e in edges:
                     node_degrees[e["source"]] = node_degrees.get(e["source"], 0) + 1
                     node_degrees[e["target"]] = node_degrees.get(e["target"], 0) + 1
-                
+
                 degrees = list(node_degrees.values())
-                
+
                 results["statistics"] = {
                     "n_nodes": len(nodes),
                     "n_edges": len(edges),
-                    "density": 2 * len(edges) / (len(nodes) * (len(nodes) - 1)) if len(nodes) > 1 else 0,
+                    "density": (
+                        2 * len(edges) / (len(nodes) * (len(nodes) - 1)) if len(nodes) > 1 else 0
+                    ),
                     "mean_degree": float(np.mean(degrees)),
                     "max_degree": int(max(degrees)),
-                    "hub_nodes": sorted(node_degrees.items(), key=lambda x: x[1], reverse=True)[:10],
+                    "hub_nodes": sorted(node_degrees.items(), key=lambda x: x[1], reverse=True)[
+                        :10
+                    ],
                 }
-            
+
             results["nodes"] = nodes[:500]
             results["edges"] = edges[:500]
-            
+
         elif network_type == "ppi" and gene_list:
             # For PPI, we'd query STRING or similar
             # This is a simplified version using correlation within genes
-            self.update_state(state="PROGRESS", meta={"progress": 0.5, "step": "Building PPI network"})
-            
+            self.update_state(
+                state="PROGRESS", meta={"progress": 0.5, "step": "Building PPI network"}
+            )
+
             results["nodes"] = gene_list[:100]
             results["statistics"] = {
                 "n_input_genes": len(gene_list),
                 "note": "PPI network requires external database integration",
             }
-            
+
         else:
             raise ValueError("Must provide dataset_id for coexpression or gene_list for PPI")
-        
+
         self.update_state(state="PROGRESS", meta={"progress": 1.0, "step": "Complete"})
-        
-        logger.info(f"Network analysis completed: {results['statistics'].get('n_nodes', 0)} nodes, {results['statistics'].get('n_edges', 0)} edges")
-        
+
+        logger.info(
+            f"Network analysis completed: {results['statistics'].get('n_nodes', 0)} nodes, {results['statistics'].get('n_edges', 0)} edges"
+        )
+
         return {
             "status": "completed",
             **results,
         }
-        
+
     except Exception as e:
         logger.error(f"Network analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
         return {
             "status": "failed",

@@ -1,9 +1,7 @@
-"""
-REST endpoints for gene prediction, molecular dynamics, docking, and combined pipelines.
-"""
+"""REST endpoints for gene prediction, molecular dynamics, docking, and combined pipelines."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -53,7 +51,7 @@ class GenePredictFromFastaRequest(BaseModel):
 class AssemblyGeneAnnotateRequest(BaseModel):
     """Gene prediction on assembled contigs."""
 
-    contigs: List[Dict[str, Any]] = Field(
+    contigs: list[dict[str, Any]] = Field(
         ...,
         description="List of {id, sequence, coverage?} per contig",
     )
@@ -141,8 +139,8 @@ async def api_predict_genes_contig(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
-    def row(g: GenePrediction) -> Dict[str, Any]:
-        d: Dict[str, Any] = {
+    def row(g: GenePrediction) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "id": g.id,
             "contig": g.contig,
             "start": g.start,
@@ -169,7 +167,9 @@ async def api_predict_genes_fasta(
     import tempfile
 
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fa", delete=False, encoding="utf-8") as tmp:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".fa", delete=False, encoding="utf-8"
+        ) as tmp:
             tmp.write(body.fasta)
             path = Path(tmp.name)
         try:
@@ -185,7 +185,7 @@ async def api_predict_genes_fasta(
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
-    genes: List[Dict[str, Any]] = result["genes"]
+    genes: list[dict[str, Any]] = result["genes"]
     truncated = len(genes) > body.max_genes
     return {
         "predictor": body.predictor,
@@ -245,10 +245,14 @@ async def api_run_md(
     try:
         mol = Molecule.from_pdb(body.pdb)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid PDB: {e}") from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid PDB: {e}"
+        ) from e
 
     if mol.num_atoms == 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No atoms parsed from PDB")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No atoms parsed from PDB"
+        )
 
     md = MDSimulation(mol, thermostat=BerendsenThermostat(body.temperature, tau=0.5))
     md.initialize(box_size=body.box_size, temperature=body.temperature)
@@ -290,10 +294,14 @@ async def api_run_docking(
         protein = Molecule.from_pdb(body.protein_pdb)
         ligand = Molecule.from_pdb(body.ligand_pdb)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid PDB: {e}") from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid PDB: {e}"
+        ) from e
 
     if protein.num_atoms == 0 or ligand.num_atoms == 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty protein or ligand")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Empty protein or ligand"
+        )
 
     dock = MolecularDocking(exhaustiveness=body.exhaustiveness, n_poses=body.n_poses)
     site = binding_site_at_receptor_center(protein)

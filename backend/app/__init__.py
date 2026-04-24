@@ -1,6 +1,4 @@
-"""
-Multi-Omics Analysis Suite - FastAPI Application
-"""
+"""Multi-Omics Analysis Suite - FastAPI Application."""
 
 from typing import Any
 

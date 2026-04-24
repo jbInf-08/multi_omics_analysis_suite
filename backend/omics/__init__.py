@@ -1,5 +1,4 @@
-"""
-Multi-Omics Analysis Suite - Omics Modules
+"""Multi-Omics Analysis Suite - Omics Modules.
 ==========================================
 
 This package contains all omics-specific modules covering 50+ omics disciplines.
@@ -12,7 +11,7 @@ Categories:
 - Specialized: 20+ additional omics types
 """
 
+from backend.omics.base.omics_base import OmicsCategory, OmicsModuleBase
 from backend.omics.base.registry import OmicsRegistry
-from backend.omics.base.omics_base import OmicsModuleBase, OmicsCategory
 
 __all__ = ["OmicsRegistry", "OmicsModuleBase", "OmicsCategory"]

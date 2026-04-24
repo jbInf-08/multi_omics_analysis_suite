@@ -1,18 +1,16 @@
-"""
-Omics Module Routes
-"""
+"""Omics Module Routes."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
-from backend.app.core.security import get_current_user, TokenPayload
+from backend.app.core.security import TokenPayload, get_current_user
 from backend.app.models.analysis import Analysis, AnalysisStatus, AnalysisType, utc_now
 from backend.app.models.project import Project
 from backend.app.schemas.analysis import AnalysisResponse
@@ -30,9 +28,9 @@ class OmicsModuleInfo(BaseModel):
     description: str
     version: str
     is_active: bool
-    supported_formats: List[str]
-    available_pipelines: List[str]
-    available_analyses: List[str]
+    supported_formats: list[str]
+    available_pipelines: list[str]
+    available_analyses: list[str]
 
 
 class OmicsCategoryInfo(BaseModel):
@@ -40,7 +38,7 @@ class OmicsCategoryInfo(BaseModel):
 
     name: str
     description: str
-    modules: List[str]
+    modules: list[str]
     module_count: int
 
 
@@ -48,18 +46,20 @@ class OmicsModuleAnalyzeRequest(BaseModel):
     """Body for starting a module-scoped analysis (creates an Analysis row and queues Celery)."""
 
     project_id: UUID
-    analysis_type: str = Field(..., min_length=1, description="Registered analysis name for this module")
+    analysis_type: str = Field(
+        ..., min_length=1, description="Registered analysis name for this module"
+    )
     parameters: dict = Field(default_factory=dict)
-    dataset_ids: List[UUID] = Field(default_factory=list)
+    dataset_ids: list[UUID] = Field(default_factory=list)
 
 
-@router.get("/modules", response_model=List[OmicsModuleInfo])
+@router.get("/modules", response_model=list[OmicsModuleInfo])
 async def list_omics_modules(
     request: Request,
-    category: Optional[str] = None,
+    category: str | None = None,
     active_only: bool = True,
     current_user: TokenPayload = Depends(get_current_user),
-) -> List[OmicsModuleInfo]:
+) -> list[OmicsModuleInfo]:
     """List all available omics modules."""
     registry = request.app.state.omics_registry
     modules = registry.list_modules(category=category, active_only=active_only)
@@ -79,11 +79,11 @@ async def list_omics_modules(
     ]
 
 
-@router.get("/categories", response_model=List[OmicsCategoryInfo])
+@router.get("/categories", response_model=list[OmicsCategoryInfo])
 async def list_omics_categories(
     request: Request,
     current_user: TokenPayload = Depends(get_current_user),
-) -> List[OmicsCategoryInfo]:
+) -> list[OmicsCategoryInfo]:
     """List all omics categories."""
     registry = request.app.state.omics_registry
     categories = registry.list_categories()
@@ -132,7 +132,7 @@ async def get_module_pipelines(
     module_name: str,
     request: Request,
     current_user: TokenPayload = Depends(get_current_user),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get available pipelines for an omics module."""
     registry = request.app.state.omics_registry
     module = registry.get_module(module_name)
@@ -160,7 +160,7 @@ async def get_module_analyses(
     module_name: str,
     request: Request,
     current_user: TokenPayload = Depends(get_current_user),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get available analyses for an omics module."""
     registry = request.app.state.omics_registry
     module = registry.get_module(module_name)
@@ -183,7 +183,11 @@ async def get_module_analyses(
     ]
 
 
-@router.post("/modules/{module_name}/analyze", response_model=AnalysisResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/modules/{module_name}/analyze",
+    response_model=AnalysisResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def run_module_analysis(
     module_name: str,
     body: OmicsModuleAnalyzeRequest,
@@ -264,7 +268,9 @@ async def run_module_analysis(
         await db.commit()
         await db.refresh(analysis)
 
-        logger.info("Analysis %s queued from omics module %s (task %s)", analysis.id, module.name, task.id)
+        logger.info(
+            "Analysis %s queued from omics module %s (task %s)", analysis.id, module.name, task.id
+        )
 
     except Exception as exc:
         logger.error("Failed to queue analysis %s: %s", analysis.id, exc)

@@ -1,19 +1,19 @@
-"""
-Snakemake Manager Module
+"""Snakemake Manager Module.
 ========================
 
 Run and manage Snakemake workflows for bioinformatics analysis.
 """
 
 import asyncio
-import subprocess
 import logging
-from dataclasses import dataclass, field
+import subprocess
+import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import tempfile
+from typing import Any
+
 import yaml
 
 
@@ -21,11 +21,13 @@ def utc_now() -> datetime:
     """Return current UTC time."""
     return datetime.now(timezone.utc)
 
+
 logger = logging.getLogger(__name__)
 
 
 class WorkflowStatus(str, Enum):
     """Snakemake workflow execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -36,6 +38,7 @@ class WorkflowStatus(str, Enum):
 @dataclass
 class SnakemakeConfig:
     """Configuration for Snakemake execution."""
+
     snakemake_path: str = "snakemake"
     cores: int = 4
     use_conda: bool = True
@@ -53,15 +56,16 @@ class SnakemakeConfig:
 @dataclass
 class WorkflowResult:
     """Result from a Snakemake workflow run."""
+
     workflow_name: str
     status: WorkflowStatus
     exit_code: int
     duration_seconds: float
-    output_dir: Optional[Path]
-    log_file: Optional[Path]
+    output_dir: Path | None
+    log_file: Path | None
     stdout: str
     stderr: str
-    config: Dict[str, Any]
+    config: dict[str, Any]
     started_at: datetime
     completed_at: datetime
     jobs_completed: int = 0
@@ -69,61 +73,56 @@ class WorkflowResult:
 
 
 class SnakemakeWorkflow:
-    """
-    Represents a Snakemake workflow.
-    """
-    
+    """Represents a Snakemake workflow."""
+
     def __init__(
         self,
         name: str,
         snakefile: Path,
-        config_file: Optional[Path] = None,
+        config_file: Path | None = None,
         description: str = "",
     ):
-        """
-        Initialize Snakemake workflow.
-        
+        """Initialize Snakemake workflow.
+
         Args:
             name: Workflow name
             snakefile: Path to Snakefile
             config_file: Path to config file
             description: Workflow description
+
         """
         self.name = name
         self.snakefile = Path(snakefile)
         self.config_file = Path(config_file) if config_file else None
         self.description = description
-    
+
     def validate(self) -> bool:
         """Validate workflow files exist."""
         if not self.snakefile.exists():
             return False
-        if self.config_file and not self.config_file.exists():
-            return False
-        return True
+        return not (self.config_file and not self.config_file.exists())
 
 
 class SnakemakeRunner:
-    """
-    Execute and manage Snakemake workflows.
-    
+    """Execute and manage Snakemake workflows.
+
     Provides:
     - Workflow execution with parameter management
     - Conda/Singularity environment support
     - Progress monitoring
     - Resource management
     """
-    
-    def __init__(self, config: Optional[SnakemakeConfig] = None):
-        """
-        Initialize Snakemake runner.
-        
+
+    def __init__(self, config: SnakemakeConfig | None = None):
+        """Initialize Snakemake runner.
+
         Args:
             config: Snakemake configuration
+
         """
         self.config = config or SnakemakeConfig()
-        self._processes: Dict[str, subprocess.Popen] = {}
-    
+        self._processes: dict[str, subprocess.Popen] = {}
+
     def _check_snakemake(self) -> bool:
         """Check if Snakemake is installed."""
         try:
@@ -135,92 +134,95 @@ class SnakemakeRunner:
             return result.returncode == 0
         except FileNotFoundError:
             return False
-    
+
     async def run_workflow(
         self,
         workflow: SnakemakeWorkflow,
-        config_overrides: Optional[Dict[str, Any]] = None,
-        targets: Optional[List[str]] = None,
-        working_dir: Optional[Path] = None,
-        run_name: Optional[str] = None,
+        config_overrides: dict[str, Any] | None = None,
+        targets: list[str] | None = None,
+        working_dir: Path | None = None,
+        run_name: str | None = None,
     ) -> WorkflowResult:
-        """
-        Run a Snakemake workflow.
-        
+        """Run a Snakemake workflow.
+
         Args:
             workflow: Workflow to run
             config_overrides: Configuration overrides
             targets: Target rules to run
             working_dir: Working directory
             run_name: Run identifier
-            
+
         Returns:
             WorkflowResult
+
         """
         if not self._check_snakemake():
             raise RuntimeError("Snakemake is not installed or not in PATH")
-        
+
         if not workflow.validate():
             raise ValueError(f"Invalid workflow: {workflow.name}")
-        
+
         started_at = utc_now()
         run_name = run_name or f"{workflow.name}_{started_at.strftime('%Y%m%d_%H%M%S')}"
-        
+
         # Setup working directory
         work_dir = working_dir or Path(tempfile.mkdtemp())
         work_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Build command
         cmd = [
             self.config.snakemake_path,
-            "--snakefile", str(workflow.snakefile),
-            "--cores", str(self.config.cores),
-            "--latency-wait", str(self.config.latency_wait),
+            "--snakefile",
+            str(workflow.snakefile),
+            "--cores",
+            str(self.config.cores),
+            "--latency-wait",
+            str(self.config.latency_wait),
         ]
-        
+
         # Add config file
         if workflow.config_file:
             cmd.extend(["--configfile", str(workflow.config_file)])
-        
+
         # Add config overrides
         if config_overrides:
             for key, value in config_overrides.items():
                 cmd.extend(["--config", f"{key}={value}"])
-        
+
         # Add targets
         if targets:
             cmd.extend(targets)
-        
+
         # Add execution options
         if self.config.use_conda:
             cmd.append("--use-conda")
             cmd.extend(["--conda-frontend", self.config.conda_frontend])
-        
+
         if self.config.use_singularity:
             cmd.append("--use-singularity")
             if self.config.singularity_args:
                 cmd.extend(["--singularity-args", self.config.singularity_args])
-        
+
         if self.config.keep_going:
             cmd.append("--keep-going")
-        
+
         if self.config.dryrun:
             cmd.append("--dryrun")
-        
+
         if self.config.forceall:
             cmd.append("--forceall")
-        
+
         if self.config.printshellcmds:
             cmd.append("--printshellcmds")
-        
+
         if self.config.rerun_incomplete:
             cmd.append("--rerun-incomplete")
-        
+
         # Run workflow
         logger.info(f"Running Snakemake workflow: {' '.join(cmd)}")
-        
+
         log_file = work_dir / f"{run_name}.log"
-        
+
         try:
             with open(log_file, "w") as log:
                 process = await asyncio.create_subprocess_exec(
@@ -229,21 +231,21 @@ class SnakemakeRunner:
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(work_dir),
                 )
-                
+
                 self._processes[run_name] = process
-                
+
                 stdout, stderr = await process.communicate()
-                
+
                 log.write(stdout.decode())
                 if stderr:
                     log.write("\n--- STDERR ---\n")
                     log.write(stderr.decode())
-            
+
             completed_at = utc_now()
             duration = (completed_at - started_at).total_seconds()
-            
+
             status = WorkflowStatus.COMPLETED if process.returncode == 0 else WorkflowStatus.FAILED
-            
+
             return WorkflowResult(
                 workflow_name=workflow.name,
                 status=status,
@@ -257,7 +259,7 @@ class SnakemakeRunner:
                 started_at=started_at,
                 completed_at=completed_at,
             )
-            
+
         except Exception as e:
             logger.error(f"Workflow execution failed: {e}")
             return WorkflowResult(
@@ -276,71 +278,71 @@ class SnakemakeRunner:
         finally:
             if run_name in self._processes:
                 del self._processes[run_name]
-    
+
     async def dry_run(
         self,
         workflow: SnakemakeWorkflow,
-        config_overrides: Optional[Dict[str, Any]] = None,
+        config_overrides: dict[str, Any] | None = None,
     ) -> str:
-        """
-        Perform a dry run to see what would be executed.
-        
+        """Perform a dry run to see what would be executed.
+
         Args:
             workflow: Workflow to check
             config_overrides: Configuration overrides
-            
+
         Returns:
             Dry run output
+
         """
         original_dryrun = self.config.dryrun
         self.config.dryrun = True
-        
+
         try:
             result = await self.run_workflow(workflow, config_overrides)
             return result.stdout
         finally:
             self.config.dryrun = original_dryrun
-    
+
     def create_workflow_from_template(
         self,
         name: str,
         template: str,
         output_dir: Path,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> SnakemakeWorkflow:
-        """
-        Create a workflow from a template.
-        
+        """Create a workflow from a template.
+
         Args:
             name: Workflow name
             template: Template name
             output_dir: Output directory
             config: Workflow configuration
-            
+
         Returns:
             SnakemakeWorkflow
+
         """
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         templates = {
             "rnaseq": self._rnaseq_template(),
             "variant_calling": self._variant_calling_template(),
             "differential_expression": self._de_template(),
         }
-        
+
         snakefile_content = templates.get(template, templates["rnaseq"])
         snakefile = output_dir / "Snakefile"
         snakefile.write_text(snakefile_content)
-        
+
         config_file = output_dir / "config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config, f)
-        
+
         return SnakemakeWorkflow(name, snakefile, config_file)
-    
+
     def _rnaseq_template(self) -> str:
         """Generate RNA-seq workflow template."""
-        return '''
+        return """
 configfile: "config.yaml"
 
 SAMPLES = config["samples"]
@@ -400,11 +402,11 @@ rule multiqc:
         "envs/qc.yaml"
     shell:
         "multiqc results/ -o results/"
-'''
-    
+"""
+
     def _variant_calling_template(self) -> str:
         """Generate variant calling workflow template."""
-        return '''
+        return """
 configfile: "config.yaml"
 
 SAMPLES = config["samples"]
@@ -451,11 +453,11 @@ rule merge_vcfs:
         "envs/variant.yaml"
     shell:
         "bcftools merge {input.vcfs} -Oz -o {output}"
-'''
-    
+"""
+
     def _de_template(self) -> str:
         """Generate differential expression workflow template."""
-        return '''
+        return """
 configfile: "config.yaml"
 
 rule all:
@@ -483,8 +485,8 @@ rule plot_volcano:
         "envs/plotting.yaml"
     script:
         "scripts/volcano_plot.py"
-'''
-    
+"""
+
     def cancel_workflow(self, run_name: str) -> bool:
         """Cancel a running workflow."""
         if run_name in self._processes:
@@ -492,7 +494,7 @@ rule plot_volcano:
             process.terminate()
             return True
         return False
-    
-    def list_running(self) -> List[str]:
+
+    def list_running(self) -> list[str]:
         """List running workflow names."""
         return list(self._processes.keys())

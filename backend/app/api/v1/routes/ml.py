@@ -1,35 +1,34 @@
-"""
-Machine Learning Routes
-"""
+"""Machine Learning Routes."""
 
-from typing import List, Optional, Dict, Any
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.app.core.security import get_current_user, TokenPayload
-
+from backend.app.core.security import TokenPayload, get_current_user
 
 router = APIRouter()
 
 
 class ModelInfo(BaseModel):
     """ML Model information."""
+
     name: str
     model_type: str
     description: str
-    supported_omics: List[str]
-    parameters: Dict[str, Any]
-    metrics: Optional[Dict[str, float]] = None
+    supported_omics: list[str]
+    parameters: dict[str, Any]
+    metrics: dict[str, float] | None = None
 
 
 class TrainRequest(BaseModel):
     """Model training request."""
+
     model_type: str
-    dataset_ids: List[UUID]
+    dataset_ids: list[UUID]
     target_column: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     cross_validation: bool = True
     cv_folds: int = 5
     test_size: float = 0.2
@@ -37,31 +36,34 @@ class TrainRequest(BaseModel):
 
 class PredictRequest(BaseModel):
     """Model prediction request."""
+
     model_id: UUID
     dataset_id: UUID
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class FeatureSelectionRequest(BaseModel):
     """Feature selection request."""
+
     dataset_id: UUID
     method: str  # filter, wrapper, embedded
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-    n_features: Optional[int] = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    n_features: int | None = None
 
 
 class ExplainRequest(BaseModel):
     """Model explanation request."""
+
     model_id: UUID
     method: str  # shap, lime
-    sample_ids: Optional[List[str]] = None
+    sample_ids: list[str] | None = None
     n_samples: int = 100
 
 
-@router.get("/models", response_model=List[ModelInfo])
+@router.get("/models", response_model=list[ModelInfo])
 async def list_available_models(
-    model_type: Optional[str] = None,
-    omics_type: Optional[str] = None,
+    model_type: str | None = None,
+    omics_type: str | None = None,
     current_user: TokenPayload = Depends(get_current_user),
 ):
     """List available ML models."""
@@ -131,15 +133,15 @@ async def list_available_models(
             parameters={"hidden_layers": [128, 64], "dropout": 0.2},
         ),
     ]
-    
+
     # Filter by type
     if model_type:
         models = [m for m in models if m.model_type == model_type]
-    
+
     # Filter by omics
     if omics_type:
         models = [m for m in models if omics_type in m.supported_omics]
-    
+
     return models
 
 
@@ -150,7 +152,7 @@ async def train_model(
 ):
     """Train a new ML model."""
     from backend.app.tasks.ml_tasks import train_model as train_model_task
-    
+
     # Map model type names
     model_type_map = {
         "random_forest": "random_forest",
@@ -161,9 +163,9 @@ async def train_model(
         "svm": "svm",
         "elastic_net": "elastic_net",
     }
-    
+
     model_type = model_type_map.get(request.model_type.lower(), request.model_type)
-    
+
     # Start training task
     task = train_model_task.delay(
         model_type=model_type,
@@ -175,7 +177,7 @@ async def train_model(
             "cv_folds": request.cv_folds if request.cross_validation else None,
         },
     )
-    
+
     return {
         "message": f"Model training started for {request.model_type}",
         "task_id": task.id,
@@ -186,7 +188,7 @@ async def train_model(
 
 @router.post("/automl")
 async def run_automl(
-    dataset_ids: List[UUID],
+    dataset_ids: list[UUID],
     target_column: str,
     task_type: str = "classification",
     time_budget: int = 3600,
@@ -194,14 +196,14 @@ async def run_automl(
 ):
     """Run AutoML to find the best model."""
     from backend.app.tasks.ml_tasks import run_automl as run_automl_task
-    
+
     task = run_automl_task.delay(
         dataset_ids=[str(d) for d in dataset_ids],
         target_column=target_column,
         task_type=task_type,
         time_budget=time_budget,
     )
-    
+
     return {
         "message": f"AutoML started for {task_type}",
         "task_id": task.id,
@@ -216,13 +218,13 @@ async def predict(
 ):
     """Run predictions using a trained model."""
     from backend.app.tasks.ml_tasks import run_prediction
-    
+
     task = run_prediction.delay(
         model_id=str(request.model_id),
         dataset_id=str(request.dataset_id),
         parameters=request.parameters,
     )
-    
+
     return {
         "message": "Prediction started",
         "model_id": str(request.model_id),
@@ -234,12 +236,12 @@ async def predict(
 @router.post("/feature-selection")
 async def feature_selection(
     request: FeatureSelectionRequest,
-    target_column: Optional[str] = None,
+    target_column: str | None = None,
     current_user: TokenPayload = Depends(get_current_user),
 ):
     """Run feature selection."""
     from backend.app.tasks.ml_tasks import run_feature_selection
-    
+
     # Map method names
     method_map = {
         "filter": "variance",
@@ -253,9 +255,9 @@ async def feature_selection(
         "lasso": "lasso",
         "random_forest": "random_forest",
     }
-    
+
     method = method_map.get(request.method.lower(), request.method)
-    
+
     task = run_feature_selection.delay(
         dataset_id=str(request.dataset_id),
         method=method,
@@ -263,7 +265,7 @@ async def feature_selection(
         target_column=target_column,
         parameters=request.parameters,
     )
-    
+
     return {
         "message": f"Feature selection started using {method} method",
         "dataset_id": str(request.dataset_id),
@@ -279,28 +281,28 @@ async def explain_model(
 ):
     """Generate model explanations using SHAP."""
     from backend.app.tasks.ml_tasks import generate_shap_explanations
-    
+
     if request.method.lower() != "shap":
         return {
-            "message": f"Only SHAP explanations are currently supported",
+            "message": "Only SHAP explanations are currently supported",
             "supported_methods": ["shap"],
         }
-    
+
     if not dataset_id:
         raise HTTPException(
             status_code=400,
             detail="dataset_id is required for SHAP explanations",
         )
-    
+
     task = generate_shap_explanations.delay(
         model_id=str(request.model_id),
         dataset_id=str(dataset_id),
         sample_ids=request.sample_ids,
         n_samples=request.n_samples,
     )
-    
+
     return {
-        "message": f"Generating SHAP explanations",
+        "message": "Generating SHAP explanations",
         "model_id": str(request.model_id),
         "task_id": task.id,
     }
@@ -313,15 +315,15 @@ async def get_task_status(
 ):
     """Get ML task status."""
     from backend.app.core.celery_app import celery_app
-    
+
     result = celery_app.AsyncResult(task_id)
-    
+
     response = {
         "task_id": task_id,
         "status": result.status,
         "ready": result.ready(),
     }
-    
+
     if result.ready():
         if result.successful():
             response["result"] = result.result
@@ -330,7 +332,7 @@ async def get_task_status(
     elif result.status == "PROGRESS":
         response["progress"] = result.info.get("progress", 0)
         response["step"] = result.info.get("step", "")
-    
+
     return response
 
 

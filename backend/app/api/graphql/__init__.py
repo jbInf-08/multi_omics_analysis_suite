@@ -1,3 +1,1 @@
-"""
-GraphQL API Module
-"""
+"""GraphQL API Module."""

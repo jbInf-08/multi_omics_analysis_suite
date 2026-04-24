@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from backend.annotation.comparative import OrthologFinder
 from backend.annotation.functional import BlastAnnotator, ECNumberAnnotator, HMMAnnotator
 from backend.app.core.security_hardening import AuditAction, AuditLogger
-import numpy as np
-
 from backend.systems_biology import (
     AttractorAnalysis,
     BooleanNetwork,
@@ -31,9 +30,7 @@ def test_ortholog_finder_uses_alignment_similarity():
 
 def test_blast_annotator_local_reference_hit():
     ann = BlastAnnotator()
-    hits = ann._search_database(
-        "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAAAAAAAAAAAAAAAA"
-    )
+    hits = ann._search_database("MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAAAAAAAAAAAAAAAA")
     assert hits
     assert hits[0].subject_id.startswith("sp|")
 
@@ -64,7 +61,7 @@ def test_ode_model_sbml_contains_species():
         )
     )
     xml = m.to_sbml()
-    assert "level=\"3\"" in xml
+    assert 'level="3"' in xml
     assert "listOfSpecies" in xml
     assert "demo" in xml
     assert "times" in xml

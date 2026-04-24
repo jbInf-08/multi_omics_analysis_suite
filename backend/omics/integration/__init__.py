@@ -1,5 +1,4 @@
-"""
-Multi-Omics Integration Module
+"""Multi-Omics Integration Module.
 ==============================
 
 Data fusion and integration methods for multi-omics analysis:
@@ -17,8 +16,8 @@ from backend.omics.integration.data_fusion import (
     LateFusion,
 )
 from backend.omics.integration.network_integration import (
-    SimilarityNetworkFusion,
     NetworkIntegrator,
+    SimilarityNetworkFusion,
 )
 from backend.omics.integration.pathway_integration import PathwayIntegrator
 

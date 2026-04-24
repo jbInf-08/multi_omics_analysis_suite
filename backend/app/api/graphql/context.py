@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 from jose import JWTError, jwt
 from starlette.requests import HTTPConnection, Request
@@ -14,10 +14,10 @@ from strawberry.types import Info
 
 from backend.app.core.config import settings
 
-_ws_connection_params: "weakref.WeakKeyDictionary[Any, dict]" = weakref.WeakKeyDictionary()
+_ws_connection_params: weakref.WeakKeyDictionary[Any, dict] = weakref.WeakKeyDictionary()
 
 
-def try_decode_bearer_sub(raw_token: str) -> Optional[str]:
+def try_decode_bearer_sub(raw_token: str) -> str | None:
     """Return JWT ``sub`` for a valid access token, else ``None``."""
     if not raw_token:
         return None
@@ -34,13 +34,13 @@ def try_decode_bearer_sub(raw_token: str) -> Optional[str]:
         return None
 
 
-def _bearer_sub_from_authorization_header(value: Optional[str]) -> Optional[str]:
+def _bearer_sub_from_authorization_header(value: str | None) -> str | None:
     if not value or not value.startswith("Bearer "):
         return None
     return try_decode_bearer_sub(value[7:].strip())
 
 
-def _bearer_sub_from_connection_params(params: Any) -> Optional[str]:
+def _bearer_sub_from_connection_params(params: Any) -> str | None:
     if not isinstance(params, dict):
         return None
     auth = params.get("Authorization") or params.get("authorization")
@@ -57,9 +57,9 @@ async def get_graphql_context(connection: HTTPConnection) -> dict[str, Any]:
     Uses a single :class:`HTTPConnection` parameter so FastAPI can inject the active
     request or WebSocket (Strawberry merges this into its internal dependency).
     """
-    request: Optional[Request] = None
-    ws: Optional[WebSocket] = None
-    token_sub: Optional[str] = None
+    request: Request | None = None
+    ws: WebSocket | None = None
+    token_sub: str | None = None
 
     if isinstance(connection, WebSocket):
         ws = connection
@@ -67,14 +67,12 @@ async def get_graphql_context(connection: HTTPConnection) -> dict[str, Any]:
         token_sub = _bearer_sub_from_connection_params(params)
     else:
         request = cast(Request, connection)
-        token_sub = _bearer_sub_from_authorization_header(
-            request.headers.get("Authorization")
-        )
+        token_sub = _bearer_sub_from_authorization_header(request.headers.get("Authorization"))
 
     return {"token_sub": token_sub, "request": request, "websocket": ws}
 
 
-def token_sub_from_graphql_info(info: Info) -> Optional[str]:
+def token_sub_from_graphql_info(info: Info) -> str | None:
     """Resolve authenticated ``sub`` from GraphQL ``info.context`` (HTTP or WebSocket)."""
     ctx = info.context
     if not isinstance(ctx, dict):
@@ -91,7 +89,7 @@ def token_sub_from_graphql_info(info: Info) -> Optional[str]:
 class AppGraphQLRouter(GraphQLRouter):
     """Captures graphql-transport-ws ``connection_init`` payload for :func:`get_graphql_context`."""
 
-    async def on_ws_connect(self, context: Dict[str, object]) -> Any:
+    async def on_ws_connect(self, context: dict[str, object]) -> Any:
         websocket = context.get("websocket")
         params = context.get("connection_params")
         if websocket is not None and isinstance(params, dict):

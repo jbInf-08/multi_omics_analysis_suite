@@ -1,5 +1,4 @@
-"""
-AI/LLM Integration Module
+"""AI/LLM Integration Module.
 =========================
 
 Integration with Large Language Models:
@@ -8,20 +7,20 @@ Integration with Large Language Models:
 - LLM-powered insights generation
 """
 
-from backend.ai.llm_providers import (
-    LLMProvider,
-    OpenAIProvider,
-    AnthropicProvider,
-    LLMConfig,
-)
 from backend.ai.chatbot import (
     AnalysisChatbot,
     ChatMessage,
     ChatSession,
 )
 from backend.ai.insights import (
-    InsightGenerator,
     AnalysisInsight,
+    InsightGenerator,
+)
+from backend.ai.llm_providers import (
+    AnthropicProvider,
+    LLMConfig,
+    LLMProvider,
+    OpenAIProvider,
 )
 
 __all__ = [

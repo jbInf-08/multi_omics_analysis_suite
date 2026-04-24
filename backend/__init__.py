@@ -1,5 +1,4 @@
-"""
-Multi-Omics Analysis Suite Backend
+"""Multi-Omics Analysis Suite Backend.
 ==================================
 
 A comprehensive multi-omics analysis platform covering 50+ omics disciplines.

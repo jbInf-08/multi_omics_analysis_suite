@@ -1,25 +1,21 @@
-"""
-Project Routes
-"""
+"""Project Routes."""
 
-from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.app.core.database import get_db
-from backend.app.core.security import get_current_user, TokenPayload
+from backend.app.core.security import TokenPayload, get_current_user
 from backend.app.models.project import Project, ProjectStatus
+from backend.app.schemas.common import PaginatedResponse
 from backend.app.schemas.project import (
     ProjectCreate,
-    ProjectUpdate,
     ProjectResponse,
     ProjectSummary,
+    ProjectUpdate,
 )
-from backend.app.schemas.common import PaginatedResponse
-
 
 router = APIRouter()
 
@@ -42,11 +38,11 @@ async def create_project(
         metadata=project_data.metadata,
         owner_id=UUID(current_user.sub),
     )
-    
+
     db.add(project)
     await db.commit()
     await db.refresh(project)
-    
+
     return project
 
 
@@ -54,8 +50,8 @@ async def create_project(
 async def list_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status_filter: Optional[str] = None,
-    omics_type: Optional[str] = None,
+    status_filter: str | None = None,
+    omics_type: str | None = None,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -64,30 +60,28 @@ async def list_projects(
     user_uuid = UUID(current_user.sub)
     query = select(Project).where(Project.owner_id == user_uuid)
     count_query = select(func.count(Project.id)).where(Project.owner_id == user_uuid)
-    
+
     if status_filter:
         query = query.where(Project.status == status_filter)
         count_query = count_query.where(Project.status == status_filter)
-    
+
     if omics_type:
         query = query.where(Project.omics_types.contains([omics_type]))
         count_query = count_query.where(Project.omics_types.contains([omics_type]))
-    
+
     # Count total
     count_result = await db.execute(count_query)
     total = count_result.scalar()
-    
+
     # Get paginated results
     offset = (page - 1) * page_size
     result = await db.execute(
-        query.order_by(Project.updated_at.desc())
-        .offset(offset)
-        .limit(page_size)
+        query.order_by(Project.updated_at.desc()).offset(offset).limit(page_size)
     )
     projects = result.scalars().all()
-    
+
     pages = (total + page_size - 1) // page_size if total > 0 else 1
-    
+
     # Convert to summary
     summaries = [
         ProjectSummary(
@@ -100,7 +94,7 @@ async def list_projects(
         )
         for p in projects
     ]
-    
+
     return PaginatedResponse(
         items=summaries,
         total=total,
@@ -121,20 +115,20 @@ async def get_project(
     """Get project by ID."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
-    
+
     # Check access
     if str(project.owner_id) != current_user.sub and project.visibility == "private":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this project",
         )
-    
+
     return project
 
 
@@ -148,29 +142,29 @@ async def update_project(
     """Update project."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
-    
+
     if str(project.owner_id) != current_user.sub:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this project",
         )
-    
+
     # Update fields
     update_data = project_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         if field == "status":
             value = ProjectStatus(value)
         setattr(project, field, value)
-    
+
     await db.commit()
     await db.refresh(project)
-    
+
     return project
 
 
@@ -183,18 +177,18 @@ async def delete_project(
     """Delete project (soft delete)."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
-    
+
     if str(project.owner_id) != current_user.sub:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this project",
         )
-    
+
     project.status = ProjectStatus.DELETED
     await db.commit()

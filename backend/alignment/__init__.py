@@ -1,45 +1,44 @@
-"""
-Read Alignment Module
+"""Read Alignment Module.
 =====================
 
 Comprehensive read alignment tools for short and long read mapping,
 alignment processing, and variant calling preparation.
 """
 
-from .mappers import (
-    Aligner,
-    BurrowsWheelerAligner,
-    MiniMap2Aligner,
-    ShortReadMapper,
-    LongReadMapper,
-    SplicedAligner,
-    AlignmentResult,
-)
-from .index import (
-    ReferenceIndex,
-    FMIndex,
-    MinimapIndex,
-    HashIndex,
-)
-from .sam import (
-    SAMRecord,
-    SAMHeader,
-    SAMReader,
-    SAMWriter,
-    CIGARParser,
-)
 from .bam import (
     BAMProcessor,
-    PileupGenerator,
+    BaseRecalibrator,
     CoverageCalculator,
     DuplicateMarker,
-    BaseRecalibrator,
+    PileupGenerator,
+)
+from .index import (
+    FMIndex,
+    HashIndex,
+    MinimapIndex,
+    ReferenceIndex,
+)
+from .mappers import (
+    Aligner,
+    AlignmentResult,
+    BurrowsWheelerAligner,
+    LongReadMapper,
+    MiniMap2Aligner,
+    ShortReadMapper,
+    SplicedAligner,
 )
 from .quality import (
     AlignmentQC,
-    MappingStatistics,
-    InsertSizeDistribution,
     CoverageAnalysis,
+    InsertSizeDistribution,
+    MappingStatistics,
+)
+from .sam import (
+    CIGARParser,
+    SAMHeader,
+    SAMReader,
+    SAMRecord,
+    SAMWriter,
 )
 
 __all__ = [

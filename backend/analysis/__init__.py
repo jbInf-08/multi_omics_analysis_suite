@@ -1,5 +1,4 @@
-"""
-Multi-Omics Analysis Suite - Analysis Modules
+"""Multi-Omics Analysis Suite - Analysis Modules.
 ==============================================
 
 Comprehensive analysis pipelines including:
@@ -15,26 +14,26 @@ from backend.analysis.biomarker_discovery import (
     ConsensusScorer,
     StabilitySelector,
 )
-from backend.analysis.statistical_analysis import (
-    StatisticalAnalysisPipeline,
-    EffectSizeCalculator,
-    MultipleTestingCorrection,
-)
-from backend.analysis.survival_analysis import (
-    SurvivalAnalysisPipeline,
-    CoxProportionalHazards,
-    KaplanMeierEstimator,
-)
 from backend.analysis.pathway_analysis import (
-    PathwayAnalysisPipeline,
     GSEAAnalyzer,
     ORAAnalyzer,
+    PathwayAnalysisPipeline,
 )
 from backend.analysis.r_integration import (
-    RIntegrationManager,
     DESeq2Analyzer,
     EdgeRAnalyzer,
     LimmaAnalyzer,
+    RIntegrationManager,
+)
+from backend.analysis.statistical_analysis import (
+    EffectSizeCalculator,
+    MultipleTestingCorrection,
+    StatisticalAnalysisPipeline,
+)
+from backend.analysis.survival_analysis import (
+    CoxProportionalHazards,
+    KaplanMeierEstimator,
+    SurvivalAnalysisPipeline,
 )
 
 __all__ = [

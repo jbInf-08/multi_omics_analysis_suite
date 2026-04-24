@@ -1,21 +1,19 @@
-"""
-Unit Tests for Data Collectors
+"""Unit Tests for Data Collectors.
 ==============================
 
 Tests for API key loading and collector authentication.
 """
 
 import os
-import pytest
 from unittest.mock import patch
 
 from backend.data_collection.base_collector import (
-    get_api_key,
     API_KEY_MAPPING,
     BaseCollector,
+    CollectionResult,
     CollectorConfig,
     DataSource,
-    CollectionResult,
+    get_api_key,
 )
 
 
@@ -89,5 +87,11 @@ class TestBaseCollectorAuthHeader:
             async def collect(self, **kwargs):
                 return CollectionResult(source=self.source, success=False)
 
-        assert DummyCollector(CollectorConfig(source=DataSource.COSMIC, api_key=None)).has_api_key is False
-        assert DummyCollector(CollectorConfig(source=DataSource.COSMIC, api_key="x")).has_api_key is True
+        assert (
+            DummyCollector(CollectorConfig(source=DataSource.COSMIC, api_key=None)).has_api_key
+            is False
+        )
+        assert (
+            DummyCollector(CollectorConfig(source=DataSource.COSMIC, api_key="x")).has_api_key
+            is True
+        )

@@ -1,5 +1,4 @@
-"""
-Modification Omics Modules
+"""Modification Omics Modules.
 ==========================
 
 Post-translational and chemical modification omics:
@@ -12,13 +11,13 @@ Post-translational and chemical modification omics:
 - Chromatomics
 """
 
-from backend.omics.modifications.phosphoproteomics import PhosphoproteomicsModule
-from backend.omics.modifications.glycomics import GlycomicsModule
 from backend.omics.modifications.acetylomics import AcetylomicsModule
-from backend.omics.modifications.methylomics import MethylomicsModule
-from backend.omics.modifications.ubiquitomics import UbiquitomicsModule
-from backend.omics.modifications.kinomics import KinomicsModule
 from backend.omics.modifications.chromatomics import ChromatomicsModule
+from backend.omics.modifications.glycomics import GlycomicsModule
+from backend.omics.modifications.kinomics import KinomicsModule
+from backend.omics.modifications.methylomics import MethylomicsModule
+from backend.omics.modifications.phosphoproteomics import PhosphoproteomicsModule
+from backend.omics.modifications.ubiquitomics import UbiquitomicsModule
 
 __all__ = [
     "PhosphoproteomicsModule",

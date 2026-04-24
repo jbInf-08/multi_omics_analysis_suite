@@ -1,5 +1,4 @@
-"""
-Multi-Omics ML/AI Engine
+"""Multi-Omics ML/AI Engine.
 ========================
 
 Machine learning and AI components for omics analysis:
@@ -11,11 +10,11 @@ Machine learning and AI components for omics analysis:
 - Feature Selection
 """
 
+from backend.ml.automl import AutoMLPipeline
+from backend.ml.explainability import LIMEExplainer, SHAPExplainer
+from backend.ml.feature_selection import FeatureSelector
 from backend.ml.models import get_model, list_available_models
 from backend.ml.training import ModelTrainer
-from backend.ml.explainability import SHAPExplainer, LIMEExplainer
-from backend.ml.feature_selection import FeatureSelector
-from backend.ml.automl import AutoMLPipeline
 
 __all__ = [
     "get_model",

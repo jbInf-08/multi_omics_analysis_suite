@@ -1,11 +1,9 @@
-"""
-Dispatchers for Celery pipeline steps (gene annotation, structure–MD–docking).
-"""
+"""Dispatchers for Celery pipeline steps (gene annotation, structure–MD–docking)."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from backend.assembly.assemblers import AssemblyResult, Contig
 from backend.pipelines.gene_annotation import annotate_assembly_result, annotate_fasta_path
@@ -17,13 +15,11 @@ def _read_text(path: str) -> str:
 
 
 def execute_step(
-    step: Dict[str, Any],
-    _prior_results: List[Dict[str, Any]],
-    run_parameters: Dict[str, Any],
-) -> Dict[str, Any]:
-    """
-    Run a single pipeline step. ``_prior_results`` may be used later for step chaining.
-    """
+    step: dict[str, Any],
+    _prior_results: list[dict[str, Any]],
+    run_parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """Run a single pipeline step. ``_prior_results`` may be used later for step chaining."""
     merged = {**run_parameters, **(step.get("params") or {})}
     stype = (step.get("type") or step.get("name") or "").lower().strip()
 

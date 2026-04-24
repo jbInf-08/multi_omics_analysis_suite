@@ -1,49 +1,48 @@
-"""
-Bioinformatics Foundation Module
+"""Bioinformatics Foundation Module.
 ================================
 
 Core bioinformatics utilities, algorithms, and data structures for
 sequence analysis, alignment, and biological computations.
 """
 
-from .sequence import (
-    Sequence,
-    DNASequence,
-    RNASequence,
-    ProteinSequence,
-    SequenceCollection,
-)
 from .algorithms import (
-    SequenceAligner,
-    LocalAligner,
     GlobalAligner,
-    MultipleSequenceAligner,
-    MotifFinder,
     KmerCounter,
+    LocalAligner,
+    MotifFinder,
+    MultipleSequenceAligner,
+    SequenceAligner,
 )
 from .formats import (
+    BEDParser,
     FastaParser,
     FastqParser,
+    GenBankParser,
     GFFParser,
-    BEDParser,
     SAMParser,
     VCFParser,
-    GenBankParser,
+)
+from .sequence import (
+    DNASequence,
+    ProteinSequence,
+    RNASequence,
+    Sequence,
+    SequenceCollection,
 )
 from .utils import (
+    calculate_tm,
+    codon_usage,
+    find_orfs,
+    gc_content,
     reverse_complement,
     translate,
-    gc_content,
-    calculate_tm,
-    find_orfs,
-    codon_usage,
 )
 
 __all__ = [
     # Sequences
     "Sequence",
     "DNASequence",
-    "RNASequence", 
+    "RNASequence",
     "ProteinSequence",
     "SequenceCollection",
     # Algorithms

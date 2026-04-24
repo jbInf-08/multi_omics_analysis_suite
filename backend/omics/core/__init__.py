@@ -1,5 +1,4 @@
-"""
-Core Omics Modules
+"""Core Omics Modules.
 ==================
 
 Fully implemented core omics modules:
@@ -13,14 +12,14 @@ Fully implemented core omics modules:
 - Lipidomics
 """
 
-from backend.omics.core.genomics import GenomicsModule
-from backend.omics.core.transcriptomics import TranscriptomicsModule
-from backend.omics.core.proteomics import ProteomicsModule
-from backend.omics.core.metabolomics import MetabolomicsModule
 from backend.omics.core.epigenomics import EpigenomicsModule
+from backend.omics.core.genomics import GenomicsModule
+from backend.omics.core.lipidomics import LipidomicsModule
+from backend.omics.core.metabolomics import MetabolomicsModule
 from backend.omics.core.metagenomics import MetagenomicsModule
 from backend.omics.core.pharmacogenomics import PharmacogenomicsModule
-from backend.omics.core.lipidomics import LipidomicsModule
+from backend.omics.core.proteomics import ProteomicsModule
+from backend.omics.core.transcriptomics import TranscriptomicsModule
 
 __all__ = [
     "GenomicsModule",

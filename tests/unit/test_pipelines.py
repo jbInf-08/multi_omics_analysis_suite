@@ -3,12 +3,12 @@
 import textwrap
 
 from backend.assembly.assemblers import AssemblyResult, Contig
+from backend.computational_chemistry.docking import binding_site_at_receptor_center
 from backend.pipelines.gene_annotation import (
     annotate_assembly_result,
     genes_from_prodigal_gff,
     predict_genes_for_contig,
 )
-from backend.computational_chemistry.docking import binding_site_at_receptor_center
 from backend.pipelines.structure_md_dock import run_structure_md_dock
 
 
@@ -19,14 +19,12 @@ def test_predict_genes_orf_short_sequence():
 
 
 def test_genes_from_prodigal_gff_shape():
-    gff = textwrap.dedent(
-        """\
+    gff = textwrap.dedent("""\
         ##gff-version 3
         myctg\tProdigal_v2.6.3\tCDS\t1\t12\t.\t+\t0\tID=1_1;partial=00;confidence=99.0;translation=MWK
         other\tProdigal_v2.6.3\tCDS\t1\t9\t.\t+\t0\tID=2_1;partial=00;confidence=88.0;translation=MAA
         segc\tProdigal_v2.6.3\tCDS\t7\t15\t.\t-\t0\tID=3_1;partial=00;confidence=90.0;translation=MWK
-        """
-    ).strip()
+        """).strip()
     seq_c = "ATGTGGAAATAA"
     seq_o = "ATGGCTGCA"
     # Minus strand: genomic slice TTTCCACAT (coords 7–15) revcomp → ATGTGGAAA (MWK).
@@ -37,7 +35,12 @@ def test_genes_from_prodigal_gff_shape():
         {"myctg": seq_c, "other": seq_o, "segc": seq_g.upper()},
     )
     assert len(preds) == 3
-    assert preds[0].id == "1_1" and preds[0].strand == "+" and preds[0].start == 1 and preds[0].end == 12
+    assert (
+        preds[0].id == "1_1"
+        and preds[0].strand == "+"
+        and preds[0].start == 1
+        and preds[0].end == 12
+    )
     assert preds[0].nucleotide_seq == "ATGTGGAAATAA"
     assert preds[0].protein_seq == "MWK"
     assert preds[1].contig == "other" and preds[1].protein_seq == "MAA"

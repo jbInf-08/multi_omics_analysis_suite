@@ -1,45 +1,44 @@
-"""
-Long Read Sequencing Module
+"""Long Read Sequencing Module.
 ===========================
 
 Analysis tools for Oxford Nanopore and PacBio sequencing data.
 """
 
+from .analysis import (
+    AdapterDetector,
+    ErrorProfile,
+    LongReadQC,
+    QualityAnalysis,
+    ReadLengthDistribution,
+)
 from .basecalling import (
     BaseCaller,
     NanoporeBaseCaller,
-    SignalProcessor,
     QualityScoreCalculator,
-)
-from .analysis import (
-    LongReadQC,
-    ReadLengthDistribution,
-    QualityAnalysis,
-    ErrorProfile,
-    AdapterDetector,
+    SignalProcessor,
 )
 from .methylation import (
+    DamageDetector,
     MethylationCaller,
     ModificationDetector,
-    DamageDetector,
-)
-from .structural_variants import (
-    SVCaller,
-    BreakpointDetector,
-    InsertionFinder,
-    DeletionFinder,
-    InversionFinder,
-    TranslocationFinder,
 )
 from .phasing import (
-    Phaser,
     HaplotypeAssembler,
+    Phaser,
     ReadPartitioner,
 )
+from .structural_variants import (
+    BreakpointDetector,
+    DeletionFinder,
+    InsertionFinder,
+    InversionFinder,
+    SVCaller,
+    TranslocationFinder,
+)
 from .transcript import (
-    IsoformDetector,
-    FullLengthTranscript,
     AlternativeSplicing,
+    FullLengthTranscript,
+    IsoformDetector,
 )
 
 __all__ = [
