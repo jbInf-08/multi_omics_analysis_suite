@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: multi-omics
+  labels:
+    app.kubernetes.io/name: multi-omics-suite
+    app.kubernetes.io/component: namespace
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: multi-omics-quota
+  namespace: multi-omics
+spec:
+  hard:
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.cpu: "64"
+    limits.memory: 128Gi
+    persistentvolumeclaims: "20"
+    pods: "100"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: multi-omics-limits
+  namespace: multi-omics
+spec:
+  limits:
+    - default:
+        cpu: "2"
+        memory: 4Gi
+      defaultRequest:
+        cpu: "500m"
+        memory: 1Gi
+      type: Container

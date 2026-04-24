@@ -1,0 +1,29 @@
+FROM jupyter/scipy-notebook:python-3.11
+
+USER root
+
+# Install additional system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY pyproject.toml /tmp/
+RUN pip install --no-cache-dir -e "/tmp/[notebooks]"
+
+# Install additional bioinformatics packages
+RUN pip install --no-cache-dir \
+    scanpy \
+    anndata \
+    pydeseq2 \
+    biopython
+
+USER ${NB_UID}
+
+WORKDIR /home/jovyan
+
+EXPOSE 8888
+
+# Use shell form to allow environment variable expansion
+CMD ["start-notebook.sh", "--IdentityProvider.token="]

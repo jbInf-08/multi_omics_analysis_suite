@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moas-celery-worker
+  namespace: multi-omics
+  labels:
+    app: moas-celery
+    component: worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: moas-celery
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: moas-celery
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: multi-omics-suite/api:latest
+          command: ["celery", "-A", "backend.app.core.celery_app", "worker", "-l", "info", "--concurrency=4"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moas-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: moas-config
+                  key: redis-url
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: moas-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moas-celery-beat
+  namespace: multi-omics
+  labels:
+    app: moas-celery
+    component: beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moas-celery
+      component: beat
+  template:
+    metadata:
+      labels:
+        app: moas-celery
+        component: beat
+    spec:
+      containers:
+        - name: beat
+          image: multi-omics-suite/api:latest
+          command: ["celery", "-A", "backend.app.core.celery_app", "beat", "-l", "info"]
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: moas-config
+                  key: redis-url
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: moas-celery-worker-hpa
+  namespace: multi-omics
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: moas-celery-worker
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

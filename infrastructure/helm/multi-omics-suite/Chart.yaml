@@ -1,0 +1,28 @@
+apiVersion: v2
+name: multi-omics-suite
+description: A Helm chart for Multi-Omics Analysis Suite
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - bioinformatics
+  - omics
+  - multi-omics
+  - machine-learning
+home: https://github.com/multi-omics/analysis-suite
+maintainers:
+  - name: Multi-Omics Team
+    email: team@multi-omics.example.com
+dependencies:
+  - name: postgresql
+    version: "~12.1.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "~17.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: kafka
+    version: "~20.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: kafka.enabled

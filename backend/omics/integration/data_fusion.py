@@ -1,0 +1,349 @@
+"""
+Multi-Omics Data Fusion Methods
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional, Any, Union
+from dataclasses import dataclass
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+from backend.omics.base.omics_base import OmicsData
+
+
+@dataclass
+class FusionResult:
+    """Result of multi-omics data fusion."""
+    fused_data: np.ndarray
+    sample_names: List[str]
+    feature_names: List[str]
+    method: str
+    metadata: Dict[str, Any]
+    omics_contributions: Optional[Dict[str, float]] = None
+    
+    def to_dataframe(self) -> pd.DataFrame:
+        return pd.DataFrame(self.fused_data, index=self.sample_names, columns=self.feature_names)
+
+
+class DataFusion(ABC):
+    """Abstract base class for data fusion methods."""
+    
+    @abstractmethod
+    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "DataFusion":
+        """Fit the fusion model."""
+        pass
+    
+    @abstractmethod
+    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+        """Transform and fuse datasets."""
+        pass
+    
+    def fit_transform(self, datasets: Dict[str, OmicsData], **kwargs) -> FusionResult:
+        """Fit and transform."""
+        self.fit(datasets, **kwargs)
+        return self.transform(datasets)
+    
+    def _align_samples(self, datasets: Dict[str, OmicsData]) -> Dict[str, pd.DataFrame]:
+        """Align samples across datasets."""
+        # Find common samples
+        common_samples = None
+        for name, data in datasets.items():
+            samples = set(data.sample_names)
+            if common_samples is None:
+                common_samples = samples
+            else:
+                common_samples = common_samples.intersection(samples)
+        
+        common_samples = sorted(list(common_samples))
+        
+        # Align each dataset
+        aligned = {}
+        for name, data in datasets.items():
+            df = data.data.copy()
+            if not isinstance(df.index, pd.Index) or list(df.index) != data.sample_names:
+                df.index = data.sample_names
+            aligned[name] = df.loc[common_samples]
+        
+        return aligned
+
+
+class EarlyFusion(DataFusion):
+    """
+    Early fusion (feature concatenation).
+    
+    Concatenates features from multiple omics datasets after normalization.
+    """
+    
+    def __init__(
+        self,
+        normalize: bool = True,
+        scale: bool = True,
+        reduce_dim: Optional[int] = None,
+    ):
+        self.normalize = normalize
+        self.scale = scale
+        self.reduce_dim = reduce_dim
+        self.scalers: Dict[str, StandardScaler] = {}
+        self.pca: Optional[PCA] = None
+    
+    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "EarlyFusion":
+        """Fit scalers for each dataset."""
+        aligned = self._align_samples(datasets)
+        
+        if self.scale:
+            for name, df in aligned.items():
+                scaler = StandardScaler()
+                scaler.fit(df.values)
+                self.scalers[name] = scaler
+        
+        # Fit PCA if dimensionality reduction requested
+        if self.reduce_dim:
+            concatenated = self._concatenate(aligned, scale=self.scale)
+            self.pca = PCA(n_components=self.reduce_dim)
+            self.pca.fit(concatenated)
+        
+        return self
+    
+    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+        """Concatenate and transform datasets."""
+        aligned = self._align_samples(datasets)
+        
+        # Scale if fitted
+        if self.scale and self.scalers:
+            for name, df in aligned.items():
+                if name in self.scalers:
+                    aligned[name] = pd.DataFrame(
+                        self.scalers[name].transform(df.values),
+                        index=df.index,
+                        columns=df.columns,
+                    )
+        
+        # Concatenate
+        fused = self._concatenate(aligned, scale=False)
+        sample_names = list(aligned.values())[0].index.tolist()
+        
+        # Build feature names with omics prefix
+        feature_names = []
+        for name, df in aligned.items():
+            feature_names.extend([f"{name}_{f}" for f in df.columns])
+        
+        # Apply PCA if fitted
+        if self.pca:
+            fused = self.pca.transform(fused)
+            feature_names = [f"PC{i+1}" for i in range(fused.shape[1])]
+        
+        return FusionResult(
+            fused_data=fused,
+            sample_names=sample_names,
+            feature_names=feature_names,
+            method="early_fusion",
+            metadata={
+                "n_omics": len(datasets),
+                "omics_types": list(datasets.keys()),
+                "dimensionality_reduced": self.pca is not None,
+            },
+        )
+    
+    def _concatenate(self, aligned: Dict[str, pd.DataFrame], scale: bool = True) -> np.ndarray:
+        """Concatenate aligned dataframes."""
+        arrays = []
+        for name, df in aligned.items():
+            arr = df.values
+            if scale and name in self.scalers:
+                arr = self.scalers[name].transform(arr)
+            arrays.append(arr)
+        return np.hstack(arrays)
+
+
+class IntermediateFusion(DataFusion):
+    """
+    Intermediate fusion using joint dimensionality reduction.
+    
+    Methods: PCA, MOFA-like decomposition
+    """
+    
+    def __init__(
+        self,
+        method: str = "pca",
+        n_components: int = 50,
+        random_state: int = 42,
+    ):
+        self.method = method
+        self.n_components = n_components
+        self.random_state = random_state
+        self.model = None
+        self.scalers: Dict[str, StandardScaler] = {}
+    
+    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "IntermediateFusion":
+        """Fit the intermediate fusion model."""
+        aligned = self._align_samples(datasets)
+        
+        # Scale each omics
+        for name, df in aligned.items():
+            scaler = StandardScaler()
+            scaler.fit(df.values)
+            self.scalers[name] = scaler
+        
+        # Concatenate and fit model
+        concatenated = np.hstack([
+            self.scalers[name].transform(df.values)
+            for name, df in aligned.items()
+        ])
+        
+        if self.method == "pca":
+            n_comp = min(self.n_components, concatenated.shape[0], concatenated.shape[1])
+            self.model = PCA(n_components=n_comp, random_state=self.random_state)
+            self.model.fit(concatenated)
+        
+        return self
+    
+    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+        """Transform using the fitted model."""
+        aligned = self._align_samples(datasets)
+        sample_names = list(aligned.values())[0].index.tolist()
+        
+        # Scale and concatenate
+        concatenated = np.hstack([
+            self.scalers[name].transform(df.values)
+            for name, df in aligned.items()
+        ])
+        
+        # Transform
+        fused = self.model.transform(concatenated)
+        
+        return FusionResult(
+            fused_data=fused,
+            sample_names=sample_names,
+            feature_names=[f"Factor{i+1}" for i in range(fused.shape[1])],
+            method=f"intermediate_{self.method}",
+            metadata={
+                "n_omics": len(datasets),
+                "variance_explained": self.model.explained_variance_ratio_.tolist() if hasattr(self.model, "explained_variance_ratio_") else None,
+            },
+        )
+
+
+class LateFusion(DataFusion):
+    """
+    Late fusion using ensemble of omics-specific predictions.
+    
+    Combines predictions from models trained on each omics type.
+    """
+    
+    def __init__(
+        self,
+        aggregation: str = "mean",
+        weights: Optional[Dict[str, float]] = None,
+    ):
+        self.aggregation = aggregation
+        self.weights = weights
+    
+    def fit(self, datasets: Dict[str, OmicsData], **kwargs) -> "LateFusion":
+        """No fitting needed for late fusion."""
+        return self
+    
+    def transform(self, datasets: Dict[str, OmicsData]) -> FusionResult:
+        """
+        Combine omics-specific signals without pre-trained predictors.
+
+        When only raw matrices are available, each block is scaled and reduced with PCA,
+        then latent scores are concatenated (a common multi-view baseline). For true
+        late fusion on model outputs, use :meth:`fuse_predictions` instead.
+        """
+        aligned = self._align_samples(datasets)
+        if not aligned:
+            return FusionResult(
+                fused_data=np.zeros((0, 0)),
+                sample_names=[],
+                feature_names=[],
+                method="late_fusion_raw_proxy",
+                metadata={"note": "empty input"},
+            )
+
+        sample_names = list(next(iter(aligned.values())).index)
+        blocks: List[np.ndarray] = []
+        feature_names: List[str] = []
+
+        for name, df in aligned.items():
+            X = StandardScaler().fit_transform(df.values.astype(float))
+            n_samples, n_feat = X.shape
+            k = min(10, n_feat, max(1, n_samples - 1))
+            pca = PCA(n_components=k, random_state=42)
+            scores = pca.fit_transform(X)
+            blocks.append(scores)
+            feature_names.extend([f"{name}_LF{i + 1}" for i in range(k)])
+
+        fused = np.hstack(blocks)
+
+        return FusionResult(
+            fused_data=fused,
+            sample_names=sample_names,
+            feature_names=feature_names,
+            method="late_fusion_raw_proxy",
+            metadata={
+                "n_omics": len(datasets),
+                "omics_types": list(datasets.keys()),
+                "note": (
+                    "Per-omics PCA scores concatenated; use fuse_predictions() when "
+                    "per-view model outputs exist."
+                ),
+            },
+            omics_contributions=self.weights,
+        )
+    
+    def fuse_predictions(
+        self,
+        predictions: Dict[str, np.ndarray],
+        sample_names: List[str],
+    ) -> FusionResult:
+        """
+        Fuse predictions from multiple omics models.
+        
+        Args:
+            predictions: Dict mapping omics name to prediction array
+            sample_names: Sample names
+        
+        Returns:
+            FusionResult with fused predictions
+        """
+        # Stack predictions
+        pred_arrays = list(predictions.values())
+        
+        # Apply weights
+        if self.weights:
+            weighted = []
+            for name, pred in predictions.items():
+                w = self.weights.get(name, 1.0)
+                weighted.append(pred * w)
+            pred_arrays = weighted
+        
+        # Aggregate
+        stacked = np.stack(pred_arrays, axis=-1)
+        
+        if self.aggregation == "mean":
+            fused = np.mean(stacked, axis=-1)
+        elif self.aggregation == "max":
+            fused = np.max(stacked, axis=-1)
+        elif self.aggregation == "vote":
+            # Majority voting (for classification)
+            fused = np.apply_along_axis(
+                lambda x: np.bincount(x.astype(int)).argmax(),
+                axis=-1,
+                arr=stacked,
+            )
+        else:
+            fused = np.mean(stacked, axis=-1)
+        
+        return FusionResult(
+            fused_data=fused.reshape(-1, 1) if len(fused.shape) == 1 else fused,
+            sample_names=sample_names,
+            feature_names=["prediction"],
+            method=f"late_fusion_{self.aggregation}",
+            metadata={
+                "n_omics": len(predictions),
+                "weights": self.weights,
+            },
+            omics_contributions=self.weights,
+        )

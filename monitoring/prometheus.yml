@@ -1,0 +1,76 @@
+# Prometheus Configuration for Multi-Omics Analysis Suite
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'multi-omics-suite'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Rule files
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # FastAPI Application
+  - job_name: 'omics-api'
+    static_configs:
+      - targets: ['api:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Flower (Celery monitoring)
+  - job_name: 'flower'
+    static_configs:
+      - targets: ['flower:5555']
+    metrics_path: '/metrics'
+
+  # Note: The following services require dedicated Prometheus exporters
+  # to expose metrics. Deploy the appropriate exporters if needed:
+  # - postgres_exporter for PostgreSQL (port 9187)
+  # - redis_exporter for Redis (port 9121)
+  # - neo4j-prometheus for Neo4j
+  # - kafka_exporter for Kafka (port 9308)
+
+  # PostgreSQL (requires postgres_exporter)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # Redis (requires redis_exporter)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # Neo4j (requires metrics enabled in neo4j.conf)
+  # - job_name: 'neo4j'
+  #   static_configs:
+  #     - targets: ['neo4j:2004']
+  #   metrics_path: '/metrics'
+
+  # Kafka (requires kafka_exporter)
+  # - job_name: 'kafka'
+  #   static_configs:
+  #     - targets: ['kafka-exporter:9308']
+
+  # MinIO (metrics endpoint)
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['minio:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+    scheme: http
+
+  # Dash Dashboards
+  - job_name: 'dashboards'
+    static_configs:
+      - targets: ['dashboards:8050']
