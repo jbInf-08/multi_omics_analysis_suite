@@ -27,3 +27,8 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Dynamic progress bar width (avoid JSX inline styles; set --progress-bar-fill-pct via script) */
+.progress-bar-fill {
+  width: var(--progress-bar-fill-pct, 0%);
+}
