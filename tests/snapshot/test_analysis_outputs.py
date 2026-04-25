@@ -5,13 +5,28 @@ Tests that verify analysis outputs remain consistent across code changes.
 Uses pytest-snapshot for comparing complex outputs.
 """
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# Load statistical analysis without `backend.analysis` package (avoids lightgbm via __init__.py).
+_root = Path(__file__).parent.parent.parent
+_sp = importlib.util.spec_from_file_location(
+    "moas_statistical_snapshot",
+    _root / "backend" / "analysis" / "statistical_analysis.py",
+)
+_statistical_analysis = importlib.util.module_from_spec(_sp)
+sys.modules["moas_statistical_snapshot"] = _statistical_analysis
+_sp.loader.exec_module(_statistical_analysis)
+EffectSizeCalculator = _statistical_analysis.EffectSizeCalculator
+MultipleTestingCorrection = _statistical_analysis.MultipleTestingCorrection
+differential_expression_analysis = _statistical_analysis.differential_expression_analysis
 
 # Snapshot directory
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
@@ -180,8 +195,6 @@ class TestStatisticalAnalysisSnapshots:
 
     def test_effect_size_snapshot(self):
         """Test effect size calculation consistency."""
-        from backend.analysis.statistical_analysis import EffectSizeCalculator
-
         np.random.seed(42)  # Reproducible
 
         # Create test groups
@@ -198,8 +211,6 @@ class TestStatisticalAnalysisSnapshots:
 
     def test_multiple_testing_correction_snapshot(self):
         """Test multiple testing correction consistency."""
-        from backend.analysis.statistical_analysis import MultipleTestingCorrection
-
         p_values = np.array([0.001, 0.01, 0.02, 0.03, 0.05, 0.1, 0.5])
 
         reject_bh, adjusted_bh, _, _ = MultipleTestingCorrection.correct(
@@ -222,8 +233,6 @@ class TestStatisticalAnalysisSnapshots:
 
     def test_differential_expression_snapshot(self, expression_matrix, sample_groups):
         """Test differential expression analysis consistency."""
-        from backend.analysis.statistical_analysis import differential_expression_analysis
-
         result = differential_expression_analysis(
             expression_matrix,
             sample_groups,

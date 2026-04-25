@@ -604,7 +604,7 @@ class RNASequence(Sequence):
 class ProteinSequence(Sequence):
     """Protein sequence class with protein-specific methods."""
 
-    AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWY")
+    AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWY*")
 
     # Amino acid properties
     HYDROPHOBICITY = {

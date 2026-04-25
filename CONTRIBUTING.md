@@ -1,315 +1,129 @@
 # Contributing to Multi-Omics Analysis Suite
 
-Thank you for your interest in contributing to the Multi-Omics Analysis Suite! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing. This document describes how to work on the repository in its **current** layout and tooling.
 
 ## Code of Conduct
 
-By participating in this project, you agree to abide by our Code of Conduct. Please be respectful and constructive in all interactions.
+By participating, you agree to be respectful and constructive. There is no separate `CODE_OF_CONDUCT.md` in this repo; follow standard open-source collaboration norms when interacting in issues and pull requests.
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.10+ (3.10–3.12 are exercised in CI)
 - Node.js 18+
-- Docker & Docker Compose
+- Docker and Docker Compose (optional but used for local Postgres, Redis, Neo4j, etc.)
 - Git
 
-### Setting Up Development Environment
+### Development environment
 
-1. **Fork and clone the repository:**
+1. **Clone the repository** (use your fork URL if you forked on GitHub):
 
-```bash
-git clone https://github.com/YOUR_USERNAME/multi-omics-analysis-suite.git
-cd multi-omics-analysis-suite
-```
+   ```bash
+   git clone https://github.com/jbInf-08/multi_omics_analysis_suite.git
+   cd multi_omics_analysis_suite
+   ```
 
 2. **Create a virtual environment:**
 
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-.\venv\Scripts\activate  # Windows
-```
-
-3. **Install dependencies:**
-
-```bash
-pip install -e ".[dev,notebooks,dash]"
-```
-
-4. **Install pre-commit hooks:**
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-5. **Start development services:**
-
-```bash
-docker-compose up -d postgres redis neo4j
-```
-
-6. **Run database migrations:**
-
-```bash
-alembic upgrade head
-```
-
-7. **Start the development server:**
-
-```bash
-uvicorn backend.app.main:app --reload
-```
-
-## Development Workflow
-
-### Branch Naming Convention
-
-- `feature/` - New features (e.g., `feature/add-scrnaseq-clustering`)
-- `fix/` - Bug fixes (e.g., `fix/alignment-memory-leak`)
-- `docs/` - Documentation updates
-- `refactor/` - Code refactoring
-- `test/` - Test additions or updates
-- `chore/` - Maintenance tasks
-
-### Commit Message Format
-
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <subject>
-
-[optional body]
-
-[optional footer]
-```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `style`: Code style (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Tests
-- `chore`: Maintenance
-
-**Examples:**
-
-```
-feat(genomics): add variant annotation pipeline
-
-- Implement VEP integration
-- Add ANNOVAR support
-- Create annotation result schema
-
-Closes #123
-```
-
-```
-fix(alignment): resolve memory leak in BWA wrapper
-
-The issue was caused by not closing file handles properly.
-```
-
-### Pull Request Process
-
-1. Create a feature branch from `develop`:
    ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout -b feature/your-feature
+   python -m venv venv
+   source venv/bin/activate   # Linux/macOS
+   # or
+   .\venv\Scripts\activate    # Windows
    ```
 
-2. Make your changes and commit following the commit message format.
+3. **Install the package in editable mode:**
 
-3. Run tests locally:
    ```bash
-   pytest tests/
+   pip install -e ".[dev,notebooks,dash]"
    ```
 
-4. Push your branch and create a Pull Request.
+4. **Pre-commit (optional, matches CI style checks locally):**
 
-5. Ensure CI checks pass.
+   ```bash
+   pip install pre-commit
+   pre-commit install
+   ```
 
-6. Request review from maintainers.
+5. **Configuration:** copy `.env.example` to `.env` and set variables. The backend’s default `DATABASE_URL` in `backend/app/core/config.py` is aligned with **docker-compose** PostgreSQL (host port **5433**, user `omics`, DB `omics_db`). If you use a different database, set `DATABASE_URL` accordingly.
 
-7. Address review feedback.
+6. **Start dependencies** (typical local dev: only the services you need):
 
-8. Once approved, your PR will be merged.
+   ```bash
+   docker compose up -d postgres redis neo4j
+   ```
 
-## Code Standards
+7. **Migrations:**
 
-### Python
+   ```bash
+   alembic upgrade head
+   ```
 
-- Follow [PEP 8](https://pep8.org/) style guide
-- Use type hints for all functions
-- Maximum line length: 100 characters
-- Use docstrings for all public functions and classes
+8. **Run the API:**
 
-```python
-def align_sequences(
-    seq1: str,
-    seq2: str,
-    algorithm: str = "global",
-) -> AlignmentResult:
-    """
-    Align two sequences using the specified algorithm.
-    
-    Args:
-        seq1: First sequence to align.
-        seq2: Second sequence to align.
-        algorithm: Alignment algorithm ('global' or 'local').
-        
-    Returns:
-        AlignmentResult containing aligned sequences and score.
-        
-    Raises:
-        ValueError: If algorithm is not supported.
-    """
-    ...
+   ```bash
+   uvicorn backend.app.main:app --reload
+   ```
+
+9. **Frontend (optional):** from `frontend/`, `npm ci` and `npm run dev`. The Vite config proxies `/api` and `/graphql` to `http://localhost:8000`. For production builds, you can set `VITE_API_URL` (see `frontend/src/lib/api.ts`).
+
+## Development workflow
+
+### Branches and PRs
+
+CI runs on **push and pull request** to **`main`** and **`develop`**. For new work, use **`develop`** as the base branch if it exists in your remote:
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/your-feature
 ```
 
-### TypeScript/React
+If your workflow only has `main`, branch from `main` instead.
 
-- Use TypeScript for all new code
-- Follow React best practices
-- Use functional components with hooks
-- Use Tailwind CSS for styling
+### Branch naming (convention)
 
-### Testing
+- `feature/` — new features
+- `fix/` — bug fixes
+- `docs/` — documentation
+- `refactor/`, `test/`, `chore/` — as needed
 
-- Write tests for all new features
-- Maintain test coverage above 80%
-- Use pytest fixtures for setup
-- Write property-based tests for algorithms
+### Commits
 
-```python
-def test_gc_content_bounds():
-    """GC content should always be between 0 and 1."""
-    seq = DNASequence("ATGCGATCG")
-    gc = seq.gc_content()
-    assert 0.0 <= gc <= 1.0
-```
+[Conventional Commits](https://www.conventionalcommits.org/) are encouraged, e.g. `feat(api): add endpoint`, `fix(cli): handle missing token`.
 
-## Adding New Omics Modules
+### Before opening a PR
 
-### Module Structure
+- Run `pytest tests/unit` at minimum; integration tests need Postgres/Redis (see `tests/integration/conftest.py` and GitHub Actions env).
+- Run or rely on CI for `black`, `ruff`, and the subset of `mypy` in `.github/workflows/ci.yml`.
 
-Create a new module in `backend/omics/`:
+## Code standards
 
-```
-backend/omics/your_omics/
-├── __init__.py
-├── module.py       # Main module class
-├── pipeline.py     # Analysis pipelines
-├── analysis.py     # Analysis functions
-├── utils.py        # Utility functions
-└── tests/
-    ├── __init__.py
-    └── test_module.py
-```
+- **Python:** PEP 8, type hints where practical, line length 100 (Black/ Ruff in repo config).
+- **TypeScript / React:** functional components, hooks; Tailwind for layout.
 
-### Module Interface
+## Adding or extending omics modules
 
-Implement the `OmicsModuleBase` interface:
+1. **Add a new package** under `backend/omics/…` (e.g. `backend/omics/specialized/my_omics/`) with a class extending `OmicsModuleBase` in `backend/omics/base/omics_base.py` — use existing modules (e.g. `backend/omics/core/genomics.py`) as a template. Implement the abstract methods (`name`, `category`, `description`, `load_data`, `preprocess`, `quality_control`, `normalize`, `analyze`, `visualize`, `get_available_pipelines`, `get_available_analyses`).
 
-```python
-from backend.omics.base.omics_base import OmicsModuleBase, OmicsData
+2. **Register the module** by importing the class in `backend/omics/base/registry.py` inside `OmicsRegistry.discover_and_register_modules` and appending an instance to the appropriate list (core, modification, interaction, clinical, or specialized) so it is passed to `self.register(…)`.
 
-class YourOmicsModule(OmicsModuleBase):
-    """Your omics module description."""
-    
-    name = "your_omics"
-    display_name = "Your Omics"
-    category = "core"  # or specialized, clinical, etc.
-    
-    def load_data(self, source: str) -> OmicsData:
-        """Load data from source."""
-        ...
-    
-    def preprocess(self, data: OmicsData) -> OmicsData:
-        """Preprocess the data."""
-        ...
-    
-    def quality_control(self, data: OmicsData) -> QCReport:
-        """Run quality control."""
-        ...
-    
-    def analyze(self, data: OmicsData, params: dict) -> AnalysisResult:
-        """Run analysis."""
-        ...
-```
+3. **Tests** — add tests under `tests/` following existing patterns.
 
-### Register the Module
-
-Add to the registry in `backend/omics/base/registry.py`:
-
-```python
-OMICS_MODULES = {
-    ...
-    "your_omics": "backend.omics.your_omics.module.YourOmicsModule",
-}
-```
+There is no separate `OMICS_MODULES` string dict; discovery is **explicit** in `discover_and_register_modules`.
 
 ## Documentation
 
-### Writing Documentation
+- Update [README.md](README.md) or [docs/CONFIGURATION.md](docs/CONFIGURATION.md) if you change user-visible behavior, env vars, or defaults.
+- FastAPI routes: prefer `summary` / `description` / `response_model` for OpenAPI.
 
-- Use Markdown for documentation
-- Include code examples
-- Document all public APIs
-- Add docstrings to all functions
+## Reporting issues
 
-### API Documentation
-
-FastAPI auto-generates OpenAPI documentation. Enhance it with:
-
-```python
-@router.post(
-    "/",
-    response_model=AnalysisResponse,
-    summary="Create new analysis",
-    description="Create and queue a new analysis job.",
-    responses={
-        201: {"description": "Analysis created successfully"},
-        400: {"description": "Invalid parameters"},
-        404: {"description": "Project not found"},
-    },
-)
-async def create_analysis(...):
-    ...
-```
-
-## Reporting Issues
-
-### Bug Reports
-
-Include:
-- Clear description
-- Steps to reproduce
-- Expected vs actual behavior
-- Environment details
-- Relevant logs/screenshots
-
-### Feature Requests
-
-Include:
-- Use case description
-- Proposed solution
-- Alternative solutions considered
-- Additional context
-
-## Getting Help
-
-- Open an issue for questions
-- Join our Slack/Discord community
-- Check existing documentation
+For bugs: steps to reproduce, expected vs actual behavior, OS/Python version, and relevant logs. For features: use case and constraints.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributions are licensed under the same terms as the project (MIT) — see [LICENSE](LICENSE).
 
-Thank you for contributing!
+Thank you for contributing.

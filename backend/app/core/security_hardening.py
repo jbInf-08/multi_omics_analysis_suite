@@ -19,7 +19,7 @@ from functools import wraps
 from typing import Any
 
 from fastapi import HTTPException, Request, status
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -270,12 +270,11 @@ class InputSanitizer:
 class SanitizedInput(BaseModel):
     """Base model with input sanitization."""
 
-    class Config:
-        # Strip whitespace from strings
-        anystr_strip_whitespace = True
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-    @validator("*", pre=True)
-    def sanitize_strings(self, v):
+    @field_validator("*", mode="before")
+    @classmethod
+    def sanitize_strings(cls, v: Any) -> Any:
         if isinstance(v, str):
             return InputSanitizer.sanitize_string(v)
         return v

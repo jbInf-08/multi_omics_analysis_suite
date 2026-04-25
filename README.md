@@ -1,393 +1,209 @@
 # Multi-Omics Analysis Suite
 
-A comprehensive, production-ready multi-omics analysis platform covering 50+ omics disciplines with advanced ML/AI capabilities, interactive visualizations, scalable infrastructure, and complete bioinformatics pipelines.
+A multi-omics analysis platform: FastAPI API (REST + GraphQL + WebSockets), Celery workers, PostgreSQL/Redis/Neo4j, a React (Vite) UI, and a large set of registered omics module types and bioinformatics libraries. **Package/classifiers: Beta** — not every listed capability is production-hardened end-to-end; depth varies by area.
 
-## Features
+## What is implemented today
 
-### Core Bioinformatics Foundation
+- **API & jobs**: `backend/app` — auth, projects, analyses, `POST /api/v1/omics/modules/{module}/analyze` (Celery), GraphQL including `analysisProgress` (JWT on WebSocket in production), `/api/v1/tools` for gene annotation, structure/MD, docking, pipelines.
+- **Omics modules**: 50+ `OmicsModuleBase` classes under `backend/omics/`; registration and discovery live in `backend/omics/base/registry.py` (see `OmicsRegistry.discover_and_register_modules`).
+- **Domain libraries**: `backend/bioinformatics/`, `backend/assembly/`, `backend/alignment/`, `backend/computational_chemistry/`, `backend/single_cell`-related deps, `backend/data_collection/`, etc. — not all are wired to every API surface.
+- **UI**: Vite + React 18, Tailwind — `npm run dev` in `frontend/`, dev server proxies `/api` and `/graphql` to the backend.
+- **Ops**: `docker-compose.yml` (API, workers, DBs, Kafka, MinIO, Prometheus, Grafana, Jupyter, …), `infrastructure/kubernetes/`, `infrastructure/terraform/`, `infrastructure/helm/multi-omics-suite/`, `monitoring/`.
+- **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `main` / `develop` — ruff, black, targeted mypy, pytest (unit + integration, with **continue-on-error** on the broad integration and property jobs), Vitest/frontend build, security scans.
 
-#### Sequence Analysis
-- **Sequence Classes** - DNA, RNA, and protein sequence manipulation with rich methods
-- **Alignment Algorithms** - Needleman-Wunsch, Smith-Waterman, multiple sequence alignment
-- **File Format Support** - FASTA, FASTQ, GFF/GTF, BED, SAM/BAM, VCF, GenBank parsers
-- **Motif Analysis** - PWM scoring, consensus finding, k-mer counting
-- **Index Structures** - FM-index, suffix arrays, Burrows-Wheeler Transform
+## Technology stack
 
-#### Genome Assembly
-- **De Novo Assembly** - De Bruijn graph and OLC-based assemblers
-- **Reference-Guided Assembly** - Template-based assembly with gap filling
-- **Hybrid Assembly** - Combining short and long reads
-- **Scaffolding** - Paired-end, mate-pair, long-read, and Hi-C scaffolding
-- **Polishing** - Consensus polishing, error correction, homopolymer correction
-- **Quality Assessment** - QUAST-like metrics, BUSCO analysis, k-mer completeness
+- **Backend**: Python 3.10+, FastAPI, Celery, Strawberry GraphQL, SQLAlchemy, Alembic, Redis, optional Kafka clients.
+- **Databases / infra**: PostgreSQL, Redis, Neo4j; Docker Compose and Kubernetes/Helm/Terraform layouts in `infrastructure/`.
+- **ML / scientific stack**: PyTorch, PyG, scikit-learn, XGBoost, scanpy/scvi/muon/squidpy, biopython, and others — see `pyproject.toml` dependencies.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand.
 
-#### Genome Annotation
-- **Gene Prediction** - Prodigal-like, Augustus-like, Glimmer-like, MetaGene predictors
-- **Functional Annotation** - BLAST, HMM profiles, InterPro, GO, KEGG, COG assignment
-- **Structural Annotation** - tRNA, rRNA, ncRNA, CRISPR, promoter, terminator detection
-- **Repeat Finding** - Tandem, inverted, and interspersed repeat detection
-- **Comparative Genomics** - Synteny, ortholog finding, gene clustering
-
-#### Read Alignment
-- **Short Read Mapping** - BWA-like FM-index based alignment
-- **Long Read Mapping** - Minimap2-like minimizer-based alignment
-- **Spliced Alignment** - RNA-seq aware alignment with splice junction detection
-- **BAM Processing** - Pileup generation, coverage analysis, duplicate marking
-- **Quality Control** - Mapping statistics, insert size analysis, coverage analysis
-
-### Long Read Sequencing (ONT & PacBio)
-- **Quality Analysis** - Read length distribution, quality profiles, N50/Nx calculation
-- **Error Profiling** - Substitution, insertion, deletion analysis
-- **Adapter Detection** - Automatic adapter identification and trimming
-- **Methylation Calling** - Base modification detection
-- **Structural Variants** - Breakpoint detection, insertion/deletion/inversion calling
-- **Haplotype Phasing** - Read partitioning and haplotype assembly
-- **Isoform Detection** - Full-length transcript identification
-
-### Computational Chemistry
-- **Molecular Structure** - Atom, bond, residue, and molecule representation
-- **Molecular Dynamics** - Force fields, integrators, thermostats, barostats
-- **Trajectory Analysis** - RMSD, RMSF, radius of gyration, distance analysis
-- **Molecular Docking** - Binding site prediction, pose generation, scoring functions
-- **QSAR** - Molecular descriptors, fingerprints, activity prediction
-- **Geometry Optimization** - Energy minimization, conformer generation
-
-### Systems Biology
-- **Biological Networks** - PPI, gene regulatory, metabolic, signaling networks
-- **Network Analysis** - Centrality, clustering, community detection
-- **ODE Modeling** - Kinetic models, steady-state analysis, parameter estimation
-- **Sensitivity Analysis** - Local and global parameter sensitivity
-- **Bifurcation Analysis** - One-parameter bifurcation diagrams
-- **Boolean Networks** - Discrete dynamics and attractor analysis
-
-### Omics Coverage (50+ Types)
-
-#### Core Omics (Fully Implemented)
-- **Genomics** - DNA sequence analysis, variant calling, CNV detection
-- **Transcriptomics** - RNA-seq, differential expression, splicing analysis
-- **Proteomics** - Mass spectrometry, protein quantification, PTM analysis
-- **Metabolomics** - LC-MS/NMR analysis, metabolite identification, pathway mapping
-- **Epigenomics** - DNA methylation, histone modifications, chromatin accessibility
-- **Metagenomics** - Taxonomic profiling, functional analysis, community composition
-- **Pharmacogenomics** - Drug-gene interactions, PGx variant analysis
-- **Lipidomics** - Lipid profiling, lipid pathway analysis
-
-#### Single-Cell Analysis
-- **scRNA-seq** - Clustering, trajectory analysis, cell type annotation
-- **scATAC-seq** - Chromatin accessibility at single-cell level
-- **Multimodal** - CITE-seq, Multiome integration
-- **Spatial** - Spatial transcriptomics with squidpy
-- **RNA Velocity** - Future state prediction with scVelo
-- **Cell Communication** - Ligand-receptor interaction inference
-
-#### Epigenetic Analysis
-- **ChIP-seq** - Peak calling, differential binding, motif analysis
-- **ATAC-seq** - Chromatin accessibility profiling
-- **Hi-C** - 3D genome organization, TAD calling, loop detection
-- **Bisulfite-seq** - DNA methylation at single-base resolution
-- **CUT&Tag** - Efficient chromatin profiling
-
-#### Modification Omics
-- Phosphoproteomics, Glycomics, Acetylomics, Methylomics, Ubiquitomics, Kinomics, Chromatomics
-
-#### Interaction Omics
-- Interactomics, Connectomics, Synaptomics, Regulomics, Secretomics, Degradomics, Membranomics
-
-#### Clinical/Applied Omics
-- Immunogenomics, Pharmacoproteomics, Toxicogenomics, Nutrigenomics, Neurogenomics, Allergomics
-
-#### Specialized Omics (20+ more)
-- Exposomics, Microbiomics, Fluxomics, Phenomics, Radiomics, Spatialomics, and many more...
-
-### Technology Stack
-
-- **Backend**: FastAPI, GraphQL (Strawberry), Celery, WebSocket
-- **Databases**: PostgreSQL, Redis, Neo4j
-- **ML/AI**: PyTorch, PyTorch Geometric, scikit-learn, XGBoost, SHAP
-- **Frontend**: React 18, TypeScript, Tailwind CSS
-- **Dashboards**: Dash, Plotly
-- **Infrastructure**: Docker, Kubernetes, Terraform, Prometheus/Grafana
-
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
 - Python 3.10+
-- Docker & Docker Compose
-- Node.js 18+ (for frontend)
+- Docker (Compose v2 recommended) for databases and optional full stack
+- Node.js 18+ for the frontend
 
-### Installation
+### Backend (local Python)
 
 ```bash
-# Clone the repository
 git clone https://github.com/jbInf-08/multi_omics_analysis_suite.git
 cd multi_omics_analysis_suite
 
-# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-.\venv\Scripts\activate  # Windows
+# Linux/macOS:  source venv/bin/activate
+# Windows:      .\venv\Scripts\activate
 
-# Install dependencies
 pip install -e ".[dev,notebooks,dash]"
 
-# Start services with Docker Compose
-docker-compose up -d
+# Copy and edit environment (defaults in backend Settings align with local Docker: Postgres on 5433 when using compose — see below)
+copy .env.example .env   # Windows
+# or: cp .env.example .env
+```
 
-# Run database migrations (creates/updates schemas and tables)
+**Match `DATABASE_URL` to how you run Postgres** — the backend default in code is `postgresql+asyncpg://omics:omics_secret@localhost:5433/omics_db` (port **5433** matches `docker-compose.yml`’s host mapping). The `.env.example` file may still show a different URL; for Compose-backed DBs, use user `omics`, password `omics_secret`, database `omics_db`, port `5433`.
+
+```bash
+# Start only what you need for dev, e.g.:
+docker compose up -d postgres redis neo4j
+
 alembic upgrade head
-
-# Start the API server
 uvicorn backend.app.main:app --reload
 ```
 
+- **OpenAPI**: http://localhost:8000/docs  
+- **ReDoc**: http://localhost:8000/redoc  
+- **GraphQL** (HTTP): http://localhost:8000/graphql  
+- **GraphQL subscriptions** (`analysisProgress`) require a **Bearer JWT**. Over WebSocket (graphql-transport-ws), send `connection_init` with `connection_params` containing `Authorization: "Bearer <token>"`. When `DEBUG=false`, connections without a valid token are rejected at connect time.
+
+### Full stack (Docker Compose)
+
+```bash
+docker compose up -d
+# Then run migrations if the API image does not (local dev often runs alembic from the host)
+alembic upgrade head
+```
+
+This starts the API, Celery worker/beat, Flower, Dash, frontend container, PostgreSQL, Redis, Neo4j, Kafka+ZooKeeper, MinIO, Prometheus, Grafana, Jupyter, etc. The frontend `docker-compose` service still uses `REACT_APP_*` style vars; the **Vite** app in `frontend/` normally uses the dev proxy. For a production build, set `VITE_API_URL` if the UI must call an absolute API URL.
+
 ### Using the CLI
 
+The package installs two entry points: **`omics`** and **`moas`** (identical; Typer help name is `moas`).
+
 ```bash
-# List available omics modules
-omics list-modules
+# List registered omics modules (via discovery)
+moas info
 
-# Run a genomics analysis
-omics analyze genomics --input data/samples.vcf --output results/
-
-# Run multi-omics integration
-omics integrate --omics genomics,proteomics,metabolomics --input data/ --output integrated/
+# Examples of implemented analyze subcommands (not “omics analyze genomics”)
+moas analyze de <expression.csv> <metadata.csv> -o results/de
+moas analyze pathway <gene_list> -o results/pathway
+moas analyze qc <data.csv> -o results/qc
 ```
 
-The commands above run **local** analyses through the Typer CLI. To **queue a server-side** analysis on a registered omics module (same Celery pipeline as `POST /api/v1/analyses/`), call the REST API or use:
+**Server-side** analysis (same path as the REST `POST` that queues Celery) — with API running and token from `POST /api/v1/auth/login`:
 
 ```bash
-# Requires a running API and JWT from POST /api/v1/auth/login
+# Linux / macOS / Git Bash
 export MOAS_API_BASE_URL=http://localhost:8000
 export MOAS_API_TOKEN=<your_access_token>
+moas api module-analyze single_cell clustering <project-uuid> --dataset-ids "" --parameters-json '{"k": 10}'
 
-omics api module-analyze single_cell clustering <project-uuid> \
-  --dataset-ids "" \
-  --parameters-json '{"k": 10}'
+# Windows (cmd)
+set MOAS_API_BASE_URL=http://localhost:8000
+set MOAS_API_TOKEN=<your_access_token>
+moas api module-analyze single_cell clustering <project-uuid> --dataset-ids "" --parameters-json "{\"k\": 10}"
 ```
 
-`POST /api/v1/omics/modules/{module_name}/analyze` accepts JSON with:
+`POST /api/v1/omics/modules/{module_name}/analyze` expects JSON with **`project_id`**, **`analysis_type`**, optional **`parameters`**, optional **`dataset_ids`**. Response is **201** with the Analysis resource (id, `celery_task_id`, status, etc.).
 
-- **`project_id`** (UUID): project that owns the run (you must be the project owner).
-- **`analysis_type`** (string): one of the names from `GET /api/v1/omics/modules/{module}/analyses`.
-- **`parameters`** (object): forwarded to the Celery task (merged with module metadata such as `omics_execute_analysis_type`).
-- **`dataset_ids`** (array of UUID strings): optional input datasets.
+### API — bioinformatics tools (`/api/v1/tools`)
 
-The response is **201** with the same **Analysis** shape as `POST /api/v1/analyses/` (`id`, `status`, `celery_task_id`, etc.).
+Use a normal **Bearer JWT** or, for automation, **`X-API-Key`** if `TOOLS_API_KEY` is set, or `TOOLS_ALLOW_ANONYMOUS=true` **only in local dev**. Chemistry routes share Redis-backed rate limits when `REDIS_URL` is available — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-### API Documentation
+Quick manual check:
 
-Once running, access the interactive API documentation:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **GraphQL**: http://localhost:8000/graphql
+1. Run API and frontend: `uvicorn …`, `cd frontend && npm run dev` — **Tools** page: http://localhost:3000/tools (Vite proxies `/api` to :8000).
+2. **CI** runs `tests/integration/test_bioinformatics_tools_api.py` and `tests/integration/test_omics_analyze_api.py` on every push/PR to `main` and `develop`.
 
-GraphQL **subscriptions** (`analysisProgress`) require a **Bearer JWT**. Over WebSocket (graphql-transport-ws), send `connection_init` with `connection_params` containing `Authorization: "Bearer <token>"`. In production (`DEBUG=false`), connections without a valid token are rejected at connect time.
+### Configuration and API keys
 
-### Bioinformatics tools API (`/api/v1/tools`)
-
-Gene prediction, molecular dynamics, docking, and the structure→MD→dock pipeline are exposed under `/api/v1/tools`. Authenticate with a normal **Bearer JWT** (same as other v1 routes), or set `TOOLS_API_KEY` in the environment and send `X-API-Key: <same value>`. For local automation only, you can set `TOOLS_ALLOW_ANONYMOUS=true` (not recommended in production).
-
-Chemistry endpoints (`/tools/chemistry/...`) apply per-IP rate limits (`TOOLS_CHEMISTRY_RATE_LIMIT` per `TOOLS_CHEMISTRY_RATE_PERIOD_SECONDS`, default 30/minute; set limit to `0` to disable). With `TOOLS_CHEMISTRY_RATE_LIMIT_BACKEND=auto` (default), limits are enforced in **Redis** when `REDIS_URL` is reachable so multiple API replicas share one counter; otherwise an in-process limiter is used.
-
-#### How to use quickly (tools)
-
-1. **Env** — Set `TOOLS_API_KEY` and send header `X-API-Key: <same value>`, **or** use a normal Bearer JWT from `/api/v1/auth/login`. For local scripts only, you may set `TOOLS_ALLOW_ANONYMOUS=true` (do not use in production).
-2. **UI** — Start the API (`uvicorn …`) and the frontend (`npm run dev` in `frontend/`). Open **http://localhost:3000/tools** (Vite proxies `/api` to **http://localhost:8000** by default).
-3. **CI** — On every push or PR to **`main`** or **`develop`**, the GitHub Actions **Test** job runs `pytest tests/integration/test_bioinformatics_tools_api.py` and `tests/integration/test_omics_analyze_api.py` (plus the rest of the test matrix). See `.github/workflows/ci.yml`.
-
-**Examples (curl)**
-
-List predictors (requires auth as above):
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/tools/annotation/genes/predictors
-```
-
-Predict genes on one contig (Python predictor):
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"sequence":"ATGAAACCCAAATAA","contig_id":"c1","predictor":"orf"}' \
-  http://localhost:8000/api/v1/tools/annotation/genes/predict
-```
-
-Optional **Prodigal binary** (must be on `PATH`): add `"use_prodigal_binary": true` and `"predictor": "prodigal"` to the JSON body for predict / predict-fasta / assembly routes.
-
-Short MD: `POST /api/v1/tools/chemistry/md/run` with JSON `{"pdb": "<entire PDB as a string>", "n_steps": 50, ...}`.
-
-Structure → MD → docking: `POST /api/v1/tools/chemistry/pipelines/structure-md-dock` with `protein_pdb` and `ligand_pdb` strings (see Swagger **Bioinformatics Tools** schemas for all fields).
-
-The React app includes a **Tools** page (`/tools`) that calls these endpoints using the stored login token.
-
-### Configuration and API Keys
-
-External data sources (COSMIC, OncoKB, DrugBank, DepMap/CCLE, etc.) can be enabled via environment variables. Copy `.env.example` to `.env` and set the keys you need. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full list and registration links.
+Copy `.env.example` to `.env`. Full variable notes: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ### Testing
 
 ```bash
-# Unit tests
 pytest tests/unit -v
-
-# Integration tests (requires DB and Redis or mocks)
 pytest tests/integration -v
-
-# With coverage
-pytest tests/unit tests/integration -v --cov=backend --cov-report=term-missing
+pytest tests/property -v
+pytest tests/unit tests/integration -v
 ```
 
-Frontend tests:
+`pyproject.toml` adds default coverage to pytest; narrow runs may use `pytest ... --no-cov`.
+
+**Frontend** (from `frontend/`):
+
 ```bash
-cd frontend && npm test
+npm ci
+npm test
+npm run build
 ```
 
-## Project Structure
+## Repository layout
 
 ```
 multi_omics_analysis_suite/
-├── backend/                 # FastAPI backend
-│   ├── app/                # Application core
-│   ├── omics/              # 50+ omics modules
-│   ├── ml/                 # ML/AI engine
-│   ├── pipelines/          # Analysis pipelines
-│   └── data_collection/    # Data collectors
-├── frontend/               # React frontend
-├── dashboards/             # Dash dashboards
-├── cli/                    # CLI tools
-├── notebooks/              # Jupyter notebooks
-├── k8s/                    # Kubernetes configs
-├── terraform/              # Infrastructure as Code
-├── tests/                  # Test suite
-└── docs/                   # Documentation
+├── backend/                 # FastAPI app, omics modules, bioinformatics, ML, pipelines, collectors
+│   ├── app/                 # API, tasks, models, core config
+│   ├── omics/                # OmicsModuleBase implementations + registry
+│   ├── bioinformatics/       # Sequences, parsers, alignment helpers, …
+│   ├── assembly/, alignment/, computational_chemistry/, …
+│   ├── data_collection/      # Public data collectors
+│   └── …
+├── cli/                      # Typer CLI (moas / omics)
+├── frontend/                 # Vite + React
+├── dashboards/              # Dash apps
+├── docker/                  # Dockerfiles
+├── infrastructure/
+│   ├── kubernetes/            # Example manifests
+│   ├── helm/multi-omics-suite/   # Helm chart
+│   └── terraform/            # Cloud IaC
+├── monitoring/               # Prometheus/Grafana as used by Compose
+├── notebooks/
+├── tests/                    # unit, integration, property, snapshot
+├── alembic/
+└── docs/                     # e.g. CONFIGURATION.md
 ```
 
-## Architecture
+## Architecture (omics modules)
 
-The suite uses a modular, plugin-based architecture where each omics type is a self-contained module that implements a standardized interface:
-
-```python
-class OmicsModuleBase(ABC):
-    def load_data(self, source) -> OmicsData
-    def preprocess(self, data) -> OmicsData
-    def quality_control(self, data) -> QCReport
-    def normalize(self, data) -> OmicsData
-    def analyze(self, data, params) -> AnalysisResult
-    def visualize(self, result) -> List[Visualization]
-```
-
-## Data Sources
-
-The suite includes collectors for 50+ public databases:
-- **Genomics**: TCGA, GEO, ICGC, gnomAD, ClinVar, Ensembl, NCBI
-- **Proteomics**: PRIDE, ProteomicsDB, UniProt, PDB
-- **Metabolomics**: MetaboLights, HMDB, KEGG, Reactome
-- **Interactions**: STRING, BioGRID, IntAct, MINT
-- **Pathways**: KEGG, Reactome, WikiPathways, GO
-- **Structures**: PDB, AlphaFold DB, ChEMBL
-- **Single Cell**: CellxGene, HCA, scRNA-seq Atlas
-- And many more...
-
-## New Module Details
-
-### Bioinformatics Foundation
-```python
-from backend.bioinformatics import DNASequence, GlobalAligner, FastaParser
-
-# Sequence manipulation
-seq = DNASequence("ATGCGATCGATCG")
-print(seq.gc_content())  # 0.538
-print(seq.reverse_complement())  # CGATCGATCGCAT
-
-# Alignment
-aligner = GlobalAligner()
-result = aligner.align("ATGCG", "ATGCGATCG")
-print(result.identity)  # 0.8
-```
-
-### Genome Assembly
-```python
-from backend.assembly import DeBruijnAssembler, AssemblyQC
-
-# Assemble reads
-assembler = DeBruijnAssembler(k=31)
-result = assembler.assemble(reads)
-print(f"N50: {result.n50}, Contigs: {result.num_contigs}")
-
-# Quality assessment
-qc = AssemblyQC()
-stats = qc.evaluate(result.contigs)
-```
-
-### Computational Chemistry
-```python
-from backend.computational_chemistry import Molecule, MolecularDocking
-
-# Load protein and ligand
-protein = Molecule.from_pdb("protein.pdb")
-ligand = Molecule.from_pdb("ligand.pdb")
-
-# Dock ligand
-docking = MolecularDocking()
-poses = docking.dock(ligand, protein)
-print(f"Best score: {poses[0].score.total_score}")
-```
-
-### Systems Biology
-```python
-from backend.systems_biology import ODEModel, SteadyStateAnalysis
-
-# Build model
-model = ODEModel("gene_regulation")
-model.add_species(Species("mRNA", initial_value=0))
-model.add_reaction(Reaction("transcription", ...))
-
-# Find steady state
-ss_analyzer = SteadyStateAnalysis(model)
-steady_state, converged = ss_analyzer.find_steady_state()
-```
-
-## ML/AI Capabilities
-
-- **Deep Learning**: Neural networks, CNNs, RNNs, Transformers
-- **Graph Neural Networks**: GCN, GAT, GraphSAGE for biological networks
-- **Traditional ML**: Random Forest, XGBoost, SVM, Elastic Net
-- **AutoML**: Automated model selection and hyperparameter tuning
-- **Explainability**: SHAP, LIME for model interpretation
-
-## Multi-Omics Integration
-
-- **Data Fusion**: Early, intermediate, and late fusion strategies
-- **Network Integration**: Pathway-based and network-based integration
-- **Dimensionality Reduction**: PCA, UMAP, t-SNE for integrated data
-- **Biomarker Discovery**: Cross-omics biomarker identification
+Each omics type is a class extending `OmicsModuleBase` (`backend/omics/base/omics_base.py`) with `load_data`, `preprocess`, `quality_control`, `normalize`, `analyze`, `visualize`, `get_available_pipelines`, and `get_available_analyses`. The registry batches concrete module instances in `OmicsRegistry.discover_and_register_modules`.
 
 ## Deployment
 
-### Local Development
+**Kubernetes** (examples in-repo):
+
 ```bash
-docker-compose up -d
+kubectl apply -f infrastructure/kubernetes/namespace.yaml
+# Apply other manifests as appropriate for your cluster
+# Helm: chart under infrastructure/helm/multi-omics-suite/
 ```
 
-### Production (Kubernetes)
+**Helm** (name/version in `infrastructure/helm/multi-omics-suite/Chart.yaml`):
+
 ```bash
-kubectl apply -k k8s/overlays/production
-# or with Helm
-helm install multi-omics k8s/helm/multi-omics
+helm install multi-omics infrastructure/helm/multi-omics-suite
 ```
+
+**Terraform**: `infrastructure/terraform/`
+
+## Data collectors
+
+`backend/data_collection` includes clients for many public resources; some require API keys. Collectors may skip or throttle when keys are missing.
+
+## Example imports (core libraries)
+
+```python
+from backend.bioinformatics import DNASequence, GlobalAligner, FastaParser
+from backend.assembly import DeBruijnAssembler, AssemblyQC
+from backend.computational_chemistry import Molecule, MolecularDocking
+from backend.systems_biology import ODEModel, SteadyStateAnalysis
+```
+
+Adjust imports to the actual public API of each submodule; see package `__init__.py` files.
+
+## ML / multi-omics
+
+Shared dependencies support deep learning, GNNs, traditional ML, and integrative analyses; implementation is spread across `backend/ml/`, `backend/omics/integration/`, and app-layer tasks. Treat feature depth as **module-specific**.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/new-omics-module`)
-3. Commit changes (`git commit -am 'Add new omics module'`)
-4. Push to branch (`git push origin feature/new-omics-module`)
-5. Create a Pull Request
+See [CONTRIBUTING.md](CONTRIBUTING.md). Default integration branch in workflow docs is **`develop`**.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE).
 
 ## Citation
 
@@ -397,7 +213,7 @@ If you use this software in your research, please cite:
 @software{multi_omics_suite,
   title={Multi-Omics Analysis Suite},
   author={Boyer, Juan Valentin},
-  year={2025},
+  year={2026},
   url={https://github.com/jbInf-08/multi_omics_analysis_suite}
 }
 ```
