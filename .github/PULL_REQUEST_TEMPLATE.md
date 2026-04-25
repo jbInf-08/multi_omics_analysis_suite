@@ -1,6 +1,6 @@
 ## Description
 
-<!-- Describe your changes in detail -->
+<!-- Describe your changes in detail. Target branch is usually `develop` (or `main` if that is your integration branch); see CONTRIBUTING.md. -->
 
 ## Type of Change
 
