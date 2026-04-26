@@ -1,5 +1,17 @@
 # Multi-Omics Analysis Suite
 
+[![CI](https://github.com/jbInf-08/multi_omics_analysis_suite/actions/workflows/ci.yml/badge.svg)](https://github.com/jbInf-08/multi_omics_analysis_suite/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+## Golden path
+
+```bash
+pip install -e ".[dev]"
+docker compose -f docker-compose.minimal.yml up -d
+alembic upgrade head
+uvicorn backend.app.main:app --reload
+```
+
 A multi-omics analysis platform: FastAPI API (REST + GraphQL + WebSockets), Celery workers, PostgreSQL/Redis/Neo4j, a React (Vite) UI, and a large set of registered omics module types and bioinformatics libraries. **Package/classifiers: Beta** — not every listed capability is production-hardened end-to-end; depth varies by area.
 
 ## What is implemented today
