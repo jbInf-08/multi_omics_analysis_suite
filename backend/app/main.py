@@ -27,7 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup
     print("Starting Multi-Omics Analysis Suite...")
     if settings.TOOLS_ALLOW_ANONYMOUS:
-        print("WARNING: TOOLS_ALLOW_ANONYMOUS=true enables unauthenticated /api/v1/tools access (local-dev only).")
+        print(
+            "WARNING: TOOLS_ALLOW_ANONYMOUS=true enables unauthenticated /api/v1/tools access (local-dev only)."
+        )
     await init_db()
 
     # Initialize omics registry
