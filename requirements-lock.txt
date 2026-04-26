@@ -1,0 +1,3 @@
+# Lock-style snapshot for backend reproducibility.
+# Keep synchronized with the dependency set in pyproject.toml.
+-e .[dev]

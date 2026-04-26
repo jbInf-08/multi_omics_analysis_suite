@@ -130,15 +130,13 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_omics
           REDIS_URL: redis://localhost:6379/0
-        continue-on-error: true
 
       - name: Run property-based tests
         run: |
           pytest tests/property -v --hypothesis-show-statistics -x
-        continue-on-error: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           file: ./coverage.xml
           flags: unittests
@@ -166,16 +164,16 @@ jobs:
         run: npm ci
 
       - name: Type check
-        run: npm run type-check || true
+        run: npm run type-check
 
       - name: Run tests
-        run: npm test -- --passWithNoTests || true
+        run: npm test -- --passWithNoTests
 
       - name: Build
         run: npm run build
 
       - name: npm audit (high+)
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
 
   security-scan:
     name: Security Scan
@@ -195,10 +193,10 @@ jobs:
           pip install safety bandit
 
       - name: Run Safety check
-        run: safety check --full-report || true
+        run: safety check --full-report
 
       - name: Run Bandit security linter
-        run: bandit -r backend -ll -ii -x tests || true
+        run: bandit -r backend -ll -ii -x tests
 
   all-tests-pass:
     name: All Tests Pass
