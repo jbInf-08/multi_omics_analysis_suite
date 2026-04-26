@@ -8,6 +8,7 @@ A multi-omics analysis platform: FastAPI API (REST + GraphQL + WebSockets), Cele
 - **Omics modules**: 50+ `OmicsModuleBase` classes under `backend/omics/`; registration and discovery live in `backend/omics/base/registry.py` (see `OmicsRegistry.discover_and_register_modules`).
 - **Domain libraries**: `backend/bioinformatics/`, `backend/assembly/`, `backend/alignment/`, `backend/computational_chemistry/`, `backend/single_cell`-related deps, `backend/data_collection/`, etc. — not all are wired to every API surface.
 - **UI**: Vite + React 18, Tailwind — `npm run dev` in `frontend/`, dev server proxies `/api` and `/graphql` to the backend.
+- **Dual UI model**: `frontend/` (React/Vite) is the primary product UI; `dashboards/` (Dash) is retained for analytics-heavy specialist views and experiments.
 - **Ops**: `docker-compose.yml` (API, workers, DBs, Kafka, MinIO, Prometheus, Grafana, Jupyter, …), `infrastructure/kubernetes/`, `infrastructure/terraform/`, `infrastructure/helm/multi-omics-suite/`, `monitoring/`.
 - **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `main` / `develop` — ruff, black, targeted mypy, pytest (unit + integration, with **continue-on-error** on the broad integration and property jobs), Vitest/frontend build, security scans.
 
@@ -66,7 +67,13 @@ docker compose up -d
 alembic upgrade head
 ```
 
-This starts the API, Celery worker/beat, Flower, Dash, frontend container, PostgreSQL, Redis, Neo4j, Kafka+ZooKeeper, MinIO, Prometheus, Grafana, Jupyter, etc. The frontend `docker-compose` service still uses `REACT_APP_*` style vars; the **Vite** app in `frontend/` normally uses the dev proxy. For a production build, set `VITE_API_URL` if the UI must call an absolute API URL.
+This starts the API, Celery worker/beat, Flower, Dash, frontend container, PostgreSQL, Redis, Neo4j, Kafka+ZooKeeper, MinIO, Prometheus, Grafana, Jupyter, etc. The frontend compose service uses `VITE_*` variables, while local `npm run dev` generally relies on the Vite proxy. For a production build, set `VITE_API_URL` when the UI must call an absolute API URL.
+
+For a faster local bring-up with fewer services, use `docker-compose.minimal.yml` (API + PostgreSQL + Redis only):
+
+```bash
+docker compose -f docker-compose.minimal.yml up -d
+```
 
 ### Using the CLI
 
