@@ -17,6 +17,7 @@ jobs:
   build-api:
     name: Build API Image
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -64,6 +65,7 @@ jobs:
   build-dash:
     name: Build Dash Image
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -108,6 +110,7 @@ jobs:
   build-frontend:
     name: Build Frontend Image
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
