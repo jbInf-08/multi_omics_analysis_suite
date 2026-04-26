@@ -1,0 +1,26 @@
+name: Monthly Health Trend
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"
+  workflow_dispatch:
+
+jobs:
+  health-trend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Build trend summary
+        run: |
+          mkdir -p health-trend
+          echo "# Monthly Health Trend" > health-trend/summary.md
+          echo "- Repo: multi_omics_analysis_suite" >> health-trend/summary.md
+          echo "- Commit: ${GITHUB_SHA}" >> health-trend/summary.md
+          echo "- Date: $(date -u)" >> health-trend/summary.md
+          echo "- CI workflow: .github/workflows/ci.yml" >> health-trend/summary.md
+          echo "- Strict gates: lint/test/frontend/security/all-tests-pass" >> health-trend/summary.md
+      - name: Upload monthly health artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: monthly-health-trend
+          path: health-trend/
