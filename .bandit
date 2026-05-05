@@ -1,0 +1,7 @@
+exclude_dirs:
+  - tests
+  - frontend
+  - infrastructure
+  - alembic
+skips:
+  - B101  # assert_used (acceptable in test code paths)
