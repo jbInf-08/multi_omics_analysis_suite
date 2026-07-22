@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from backend.app.schemas.common import BaseSchema
 
@@ -56,7 +56,11 @@ class DatasetResponse(DatasetBase):
     normalization_method: str | None
     storage_path: str | None
     storage_type: str
-    metadata: dict
+    # The ORM attribute is ``dataset_metadata`` (``metadata`` is reserved by the
+    # SQLAlchemy Declarative base); serialize it under the public name ``metadata``.
+    metadata: dict = Field(
+        default_factory=dict, validation_alias=AliasChoices("dataset_metadata", "metadata")
+    )
     clinical_data: dict | None
     sample_metadata: dict | None
     created_at: datetime

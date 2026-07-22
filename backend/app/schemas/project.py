@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from backend.app.schemas.common import BaseSchema
 
@@ -46,7 +46,11 @@ class ProjectResponse(ProjectBase):
     owner_id: UUID
     status: str
     config: dict
-    metadata: dict
+    # The ORM attribute is ``project_metadata`` (``metadata`` is reserved by the
+    # SQLAlchemy Declarative base); serialize it under the public name ``metadata``.
+    metadata: dict = Field(
+        default_factory=dict, validation_alias=AliasChoices("project_metadata", "metadata")
+    )
     collaborators: list[dict]
     created_at: datetime
     updated_at: datetime
