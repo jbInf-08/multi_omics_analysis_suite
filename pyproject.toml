@@ -72,7 +72,6 @@ dependencies = [
     "pysam>=0.22.0",
     
     # Genome Assembly & Alignment
-    "minimap2>=2.26",
     "mappy>=2.26",
     
     # Long Read Analysis
