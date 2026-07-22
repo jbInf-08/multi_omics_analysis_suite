@@ -264,3 +264,13 @@ tests/snapshot/snapshots/*.snapshot
 # Documentation build
 docs/_build/
 site/
+
+# -----------------------------------------------------------------------------
+# Re-include application source packages that the broad build-artifact patterns
+# above (lib/, models/) would otherwise swallow. These are first-party source,
+# not build output or ML artifacts.
+# -----------------------------------------------------------------------------
+!frontend/src/lib/
+!frontend/src/lib/**
+!backend/app/models/
+!backend/app/models/**
