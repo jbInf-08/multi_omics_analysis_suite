@@ -182,7 +182,9 @@ class Sequence(ABC):
 
     def _generate_id(self) -> str:
         """Generate a unique ID based on sequence hash."""
-        return f"seq_{hashlib.md5(self._sequence.encode()).hexdigest()[:8]}"
+        # usedforsecurity=False: this is a content fingerprint for an ID, not a
+        # security control.
+        return f"seq_{hashlib.md5(self._sequence.encode(), usedforsecurity=False).hexdigest()[:8]}"
 
     @property
     def seq(self) -> str:

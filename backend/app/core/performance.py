@@ -223,7 +223,8 @@ class InMemoryCache(CacheBackend):
 def cache_key(*args, **kwargs) -> str:
     """Generate cache key from arguments."""
     key_data = json.dumps({"args": args, "kwargs": kwargs}, sort_keys=True, default=str)
-    return hashlib.md5(key_data.encode()).hexdigest()
+    # usedforsecurity=False: this is a cache key, not a security control.
+    return hashlib.md5(key_data.encode(), usedforsecurity=False).hexdigest()
 
 
 def cached(
