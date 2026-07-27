@@ -1,6 +1,7 @@
 {
   "name": "multi-omics-frontend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Multi-Omics Analysis Suite Frontend",
   "private": true,
   "dependencies": {
