@@ -171,16 +171,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # These three are blocking: the tree is clean against all of them today
+      # (tsc --noEmit, vitest and vite build all exit 0), so as `|| true` they
+      # were a job that could not fail -- a TypeScript error or a broken build
+      # would still have reported "Frontend Tests" green.
       - name: Type check
-        run: npm run type-check || true
+        run: npm run type-check
 
       - name: Run tests
-        run: npm test -- --passWithNoTests || true
+        run: npm test -- --passWithNoTests
 
       - name: Build
-        run: npm run build || true
+        run: npm run build
 
-      - name: npm audit (high+)
+      # Stays advisory: the dependency tree currently carries 14 advisories
+      # (1 critical, 7 high), so this cannot hold as a gate yet, and audit
+      # results change whenever a new advisory is published rather than when
+      # this repo changes. Left visible in the log as tracked debt.
+      - name: npm audit (high+, non-blocking)
         run: npm audit --audit-level=high || true
 
   security-scan:
