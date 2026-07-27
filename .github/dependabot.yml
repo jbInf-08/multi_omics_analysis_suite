@@ -39,23 +39,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # Paused until the Node 18 -> 20 upgrade. CI and the images run Node 18
-    # (NODE_VERSION in .github/workflows/ci.yml), and each of these majors
-    # declares an engines.node that excludes 18, so `npm ci` fails on the
-    # lockfile before any test runs:
-    #   vite 7                 node ^20.19.0 || >=22.12.0
-    #   vitest 4               node ^20.0.0 || ^22.0.0 || >=24.0.0
-    #   @vitejs/plugin-react 5 node ^20.19.0 || >=22.12.0
-    # Everything below these floors still comes through (vite 6, vitest 3 and
-    # plugin-react 4 all support Node 18). Remove these entries as part of the
-    # Node 20 upgrade.
-    ignore:
-      - dependency-name: "vite"
-        versions: [">= 7"]
-      - dependency-name: "vitest"
-        versions: [">= 4"]
-      - dependency-name: "@vitejs/plugin-react"
-        versions: [">= 5"]
 
   # Docker dependencies
   - package-ecosystem: "docker"
