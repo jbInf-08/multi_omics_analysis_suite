@@ -171,16 +171,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # These three are blocking: the tree is clean against all of them today
+      # (tsc --noEmit, vitest and vite build all exit 0), so as `|| true` they
+      # were a job that could not fail -- a TypeScript error or a broken build
+      # would still have reported "Frontend Tests" green.
       - name: Type check
-        run: npm run type-check || true
+        run: npm run type-check
 
       - name: Run tests
-        run: npm test -- --passWithNoTests || true
+        run: npm test -- --passWithNoTests
 
       - name: Build
-        run: npm run build || true
+        run: npm run build
 
-      - name: npm audit (high+)
+      # Stays advisory: the dependency tree currently carries 14 advisories
+      # (1 critical, 7 high), so this cannot hold as a gate yet, and audit
+      # results change whenever a new advisory is published rather than when
+      # this repo changes. Left visible in the log as tracked debt.
+      - name: npm audit (high+, non-blocking)
         run: npm audit --audit-level=high || true
 
   security-scan:
@@ -213,8 +221,35 @@ jobs:
 
   all-tests-pass:
     name: All Tests Pass
-    needs: [lint, frontend-test]
+    # Must depend on every gating job, otherwise this reports success without
+    # them: it previously needed only [lint, frontend-test], so the Python test
+    # matrix and the security scan could fail while "All Tests Pass" went green.
+    needs: [lint, test, frontend-test, security-scan]
+    # ``test`` and ``security-scan`` are push-only, so they are *skipped* on
+    # pull requests. Without always() this job would be skipped with them;
+    # with it, the step below decides, treating skipped as acceptable and only
+    # failure/cancelled as fatal.
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: All tests passed
-        run: echo "All tests passed successfully!"
+      - name: Verify upstream jobs
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          FRONTEND: ${{ needs['frontend-test'].result }}
+          SECURITY: ${{ needs['security-scan'].result }}
+        run: |
+          status=0
+          for job in LINT TEST FRONTEND SECURITY; do
+            result="${!job}"
+            echo "$job: $result"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::$job did not pass (result: $result)"; status=1 ;;
+            esac
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "One or more required jobs did not pass."
+            exit 1
+          fi
+          echo "All required jobs passed."
