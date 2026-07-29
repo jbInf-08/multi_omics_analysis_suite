@@ -273,6 +273,14 @@ export default function Integration() {
               <div className="space-y-3">
                 {selectedOmics.map((omicsId) => {
                   const omics = omicsTypes.find((o) => o.id === omicsId);
+                  // PLACEHOLDER, NOT A COMPUTED RESULT. This page performs no
+                  // integration: handleRunIntegration only waits 3s before
+                  // flipping to 'complete', and nothing here calls the API. The
+                  // percentage below is a random number and changes on every
+                  // re-render. It must be replaced with a real contribution
+                  // from the integration endpoint before this screen is used to
+                  // interpret data.
+                  // eslint-disable-next-line react-hooks/purity -- see above
                   const contribution = Math.random() * 40 + 10;
                   return (
                     <div key={omicsId}>

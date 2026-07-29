@@ -1,5 +1,9 @@
 # Build stage
-FROM node:20-alpine AS builder
+# Declared as a build arg so the NODE_VERSION that docker.yml passes is
+# actually honoured. It was previously hardcoded here, which meant the
+# build-arg was silently ignored and the two could drift apart.
+ARG NODE_VERSION=22
+FROM node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /app
 
