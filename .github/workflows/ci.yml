@@ -58,7 +58,13 @@ jobs:
     name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     needs: lint
-    if: github.event_name == 'push'
+    # Deliberately not gated on the event. `push` only fires for main and
+    # develop, so `if: github.event_name == 'push'` meant this job skipped on
+    # every pull request from a branch -- the Python suite only ever ran after
+    # a merge had already landed. all-tests-pass counts skipped as satisfied
+    # (correctly, for the push-only security scan), so a pull request that
+    # broke the backend reported green and could be merged. Nothing here needs
+    # a secret or push context, so it runs for pull requests too.
     strategy:
       fail-fast: false
       matrix:
@@ -240,27 +246,37 @@ jobs:
     # them: it previously needed only [lint, frontend-test], so the Python test
     # matrix and the security scan could fail while "All Tests Pass" went green.
     needs: [lint, test, frontend-test, security-scan]
-    # ``test`` and ``security-scan`` are push-only, so they are *skipped* on
-    # pull requests. Without always() this job would be skipped with them;
-    # with it, the step below decides, treating skipped as acceptable and only
-    # failure/cancelled as fatal.
+    # ``security-scan`` is push-only, so it is skipped on pull requests and this
+    # job would be skipped with it. always() lets the step below decide instead.
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify upstream jobs
         env:
-          LINT: ${{ needs.lint.result }}
-          TEST: ${{ needs.test.result }}
-          FRONTEND: ${{ needs['frontend-test'].result }}
-          SECURITY: ${{ needs['security-scan'].result }}
+          # Jobs that must actually run and succeed. Accepting "skipped" here is
+          # what let the Python matrix opt out of pull requests unnoticed, so a
+          # skip is now a failure for these three.
+          REQUIRED_LINT: ${{ needs.lint.result }}
+          REQUIRED_TEST: ${{ needs.test.result }}
+          REQUIRED_FRONTEND: ${{ needs['frontend-test'].result }}
+          # May legitimately skip: push-only by design.
+          OPTIONAL_SECURITY: ${{ needs['security-scan'].result }}
         run: |
           status=0
-          for job in LINT TEST FRONTEND SECURITY; do
+          for job in REQUIRED_LINT REQUIRED_TEST REQUIRED_FRONTEND; do
+            result="${!job}"
+            echo "$job: $result"
+            case "$result" in
+              success) ;;
+              *) echo "::error::${job#REQUIRED_} must run and pass (result: $result)"; status=1 ;;
+            esac
+          done
+          for job in OPTIONAL_SECURITY; do
             result="${!job}"
             echo "$job: $result"
             case "$result" in
               success|skipped) ;;
-              *) echo "::error::$job did not pass (result: $result)"; status=1 ;;
+              *) echo "::error::${job#OPTIONAL_} did not pass (result: $result)"; status=1 ;;
             esac
           done
           if [ "$status" -ne 0 ]; then
