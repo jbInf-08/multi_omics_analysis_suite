@@ -117,7 +117,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const user = await endpoints.auth.me();
           set({ user, isAuthenticated: true, isLoading: false });
-        } catch (error) {
+        } catch {
           set({ isLoading: false });
           // Token might be invalid - logout
           get().logout();

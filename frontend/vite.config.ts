@@ -31,4 +31,17 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
+
+  // Vitest was already a dependency but had no configuration and no test
+  // files, so `npm test` only ever reported "No test files found".
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reportsDirectory: './coverage',
+      reporter: ['text', 'lcov'],
+    },
+  },
 });

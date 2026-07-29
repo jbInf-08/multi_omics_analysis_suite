@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   lint:
@@ -171,25 +171,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # These three are blocking: the tree is clean against all of them today
-      # (tsc --noEmit, vitest and vite build all exit 0), so as `|| true` they
-      # were a job that could not fail -- a TypeScript error or a broken build
-      # would still have reported "Frontend Tests" green.
+      # These four are blocking: the tree is clean against all of them today
+      # (eslint, tsc --noEmit, vitest and vite build all exit 0), so as `|| true`
+      # they were a job that could not fail -- a TypeScript error or a broken
+      # build would still have reported "Frontend Tests" green.
+
+      # The `lint` script previously named a binary the project did not depend
+      # on, against a config file that did not exist, and no job ran it. It is
+      # a real check now, so run it here where node and the deps are set up;
+      # the `lint` job above only covers the Python tree.
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npm run type-check
 
+      # --passWithNoTests is gone: vitest is configured and there are real
+      # tests, so an empty run is now a failure rather than a pass.
       - name: Run tests
-        run: npm test -- --passWithNoTests
+        run: npm test
 
       - name: Build
         run: npm run build
 
-      # Stays advisory: the dependency tree currently carries 14 advisories
-      # (1 critical, 7 high), so this cannot hold as a gate yet, and audit
-      # results change whenever a new advisory is published rather than when
-      # this repo changes. Left visible in the log as tracked debt.
-      - name: npm audit (high+, non-blocking)
-        run: npm audit --audit-level=high || true
+      # Blocking at critical, advisory above that. The two remaining high
+      # advisories are both react-router's RSC-mode CSRF issue, which has no
+      # fixed release (7.18.2 is current) and does not reach this app: it is a
+      # client-only SPA on BrowserRouter with no RSC entry point, no framework
+      # mode and no server actions. Audit results also change when a new
+      # advisory is published rather than when this repo changes, so high is
+      # left visible in the log instead of blocking.
+      - name: npm audit (critical blocks, high advisory)
+        run: |
+          npm audit --audit-level=high || true
+          npm audit --audit-level=critical
 
   security-scan:
     name: Security Scan
