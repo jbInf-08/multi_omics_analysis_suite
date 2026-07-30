@@ -288,3 +288,32 @@ class TestComputedResult:
         assert (
             "common samples" in response.json()["detail"] or "aligned" in response.json()["detail"]
         )
+
+
+class TestLogSanitisation:
+    """CodeQL flagged log injection: these messages carry file-derived text."""
+
+    def test_newlines_and_control_characters_are_flattened(self):
+        from backend.app.api.v1.routes.omics import _for_log
+
+        forged = "ok\nINFO:root:integration approved for everyone\r\n"
+        cleaned = _for_log(forged)
+
+        assert "\n" not in cleaned
+        assert "\r" not in cleaned
+        # The text survives, only the line breaks are neutralised.
+        assert "integration approved for everyone" in cleaned
+
+    def test_long_values_are_truncated(self):
+        from backend.app.api.v1.routes.omics import _for_log
+
+        cleaned = _for_log("S" * 5000)
+
+        assert len(cleaned) <= 200
+        assert cleaned.endswith("…")
+
+    def test_accepts_non_string_values(self):
+        from backend.app.api.v1.routes.omics import _for_log
+
+        assert _for_log(ValueError("no common samples")) == "no common samples"
+        assert _for_log(None) == "None"

@@ -350,6 +350,21 @@ class OmicsIntegrationResponse(BaseModel):
 _SUPPORTED_FUSION_METHODS = {"early_fusion", "intermediate_fusion"}
 
 
+def _for_log(value: object, limit: int = 200) -> str:
+    """Flatten a value to a single safe line for logging.
+
+    Messages here can carry data read from user-uploaded files -- sample
+    identifiers taken from a parquet row index, pandas' own error text -- so
+    newlines and control characters are stripped before logging. Without that,
+    a crafted identifier could inject additional log lines.
+    """
+    text = str(value)
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in text)
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 1] + "…"
+    return cleaned
+
+
 def _load_dataset_frame(storage_path: str) -> "pd.DataFrame":
     """Read a dataset's persisted matrix. Blocking; call via a worker thread."""
     import pandas as pd
@@ -451,7 +466,10 @@ async def integrate_omics(
             frame = await run_in_threadpool(_load_dataset_frame, dataset.storage_path)
         except Exception as exc:
             logger.error(
-                "Failed to read dataset %s at %s: %s", dataset.id, dataset.storage_path, exc
+                "Failed to read dataset %s at %s: %s",
+                dataset.id,
+                _for_log(dataset.storage_path),
+                _for_log(exc),
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -485,12 +503,12 @@ async def integrate_omics(
         fusion = await run_in_threadpool(model.fit_transform, omics_inputs)
     except ValueError as exc:
         # _align_samples raises when the datasets share no sample identifiers.
-        logger.info("Integration rejected for project %s: %s", body.project_id, exc)
+        logger.info("Integration rejected for project %s: %s", body.project_id, _for_log(exc))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "Datasets could not be aligned. They must share sample identifiers "
-                f"in their row index. ({exc})"
+                "in their row index."
             ),
         ) from exc
 
