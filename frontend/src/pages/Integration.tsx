@@ -10,10 +10,12 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
+  biomarkers as biomarkersApi,
   datasets as datasetsApi,
   getApiErrorMessage,
   omics as omicsApi,
   projects as projectsApi,
+  type BiomarkerResult,
   type IntegrationResult,
 } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
@@ -154,6 +156,12 @@ export default function Integration() {
   const [selectedMethod, setSelectedMethod] = useState('intermediate_fusion');
   const [nComponents, setNComponents] = useState(10);
   const [pathwayFile, setPathwayFile] = useState('');
+  const [analysisType, setAnalysisType] = useState('differential');
+  const [featureSelection, setFeatureSelection] = useState('stability');
+  const [cvFolds, setCvFolds] = useState(5);
+  const [outcomeColumn, setOutcomeColumn] = useState('');
+  const [eventColumn, setEventColumn] = useState('');
+  const [discovery, setDiscovery] = useState<BiomarkerResult | null>(null);
   const [result, setResult] = useState<IntegrationResult | null>(null);
 
   const { data: projectsData } = useQuery({
@@ -190,14 +198,37 @@ export default function Integration() {
     },
   });
 
+  const discoverMutation = useMutation({
+    mutationFn: () =>
+      biomarkersApi.discover({
+        project_id: selectedProjectId,
+        dataset_ids: selectedDatasetIds,
+        analysis_type: analysisType,
+        outcome_column: outcomeColumn.trim(),
+        event_column: eventColumn.trim() || null,
+        feature_selection: featureSelection,
+        cv_folds: cvFolds,
+      }),
+    onSuccess: (data) => {
+      setDiscovery(data);
+      toast.success(`${data.biomarkers.length} biomarkers from ${data.n_features_tested} features`);
+    },
+    onError: (err: unknown) => {
+      setDiscovery(null);
+      toast.error(getApiErrorMessage(err));
+    },
+  });
+
   const toggleDataset = (datasetId: string) => {
     setSelectedDatasetIds((prev) =>
       prev.includes(datasetId) ? prev.filter((id) => id !== datasetId) : [...prev, datasetId]
     );
     setResult(null);
+    setDiscovery(null);
   };
 
   const canRun = selectedDatasetIds.length >= 2 && Boolean(selectedMethod);
+  const canDiscover = selectedDatasetIds.length >= 1 && outcomeColumn.trim().length > 0;
 
   return (
     <div className="space-y-6">
@@ -470,43 +501,76 @@ export default function Integration() {
         </div>
       )}
 
-      {/*
-        Biomarker Discovery is not implemented. The button has never had a
-        handler and the three selects have never had state, so the controls did
-        nothing when they appeared enabled. Kept, but disabled and labelled,
-        rather than removed: whether to build it or drop it is a product call,
-        and either way it should not look operable in the meantime.
-      */}
+      {/* Biomarker Discovery */}
       <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-medium text-gray-900">Biomarker Discovery</h2>
-            <p className="text-sm text-gray-500">
-              Identify multi-omics biomarkers from integrated data
-            </p>
-          </div>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-            Not yet available
-          </span>
+        <div className="mb-4">
+          <h2 className="text-lg font-medium text-gray-900">Biomarker Discovery</h2>
+          <p className="text-sm text-gray-500">
+            Identify multi-omics biomarkers from the selected datasets
+          </p>
         </div>
 
-        <p className="mb-4 text-sm text-gray-500">
-          This step is not wired to an endpoint yet, so the controls below are disabled.
-        </p>
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="outcome" className="block text-sm font-medium text-gray-700 mb-1">
+              Outcome column
+            </label>
+            <input
+              id="outcome"
+              type="text"
+              value={outcomeColumn}
+              placeholder="e.g. response"
+              onChange={(e) => {
+                setOutcomeColumn(e.target.value);
+                setDiscovery(null);
+              }}
+              className="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              A sample annotation to test against. Read from the dataset&apos;s own columns
+              first, then from its sample metadata.
+            </p>
+          </div>
 
-        <fieldset disabled className="grid grid-cols-1 md:grid-cols-3 gap-4 opacity-60">
-          <legend className="sr-only">Biomarker discovery options (unavailable)</legend>
+          {analysisType === 'survival' && (
+            <div>
+              <label htmlFor="event" className="block text-sm font-medium text-gray-700 mb-1">
+                Event column
+              </label>
+              <input
+                id="event"
+                type="text"
+                value={eventColumn}
+                placeholder="e.g. deceased"
+                onChange={(e) => {
+                  setEventColumn(e.target.value);
+                  setDiscovery(null);
+                }}
+                className="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                1 for an observed event, 0 for censored.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 border border-gray-200 rounded-lg">
             <label htmlFor="analysis-type" className="text-sm font-medium text-gray-900 mb-2 block">
               Analysis Type
             </label>
             <select
               id="analysis-type"
+              value={analysisType}
+              onChange={(e) => {
+                setAnalysisType(e.target.value);
+                setDiscovery(null);
+              }}
               className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
             >
-              <option>Differential Analysis</option>
-              <option>Survival Analysis</option>
-              <option>Classification</option>
+              <option value="differential">Differential Analysis</option>
+              <option value="survival">Survival Analysis</option>
             </select>
           </div>
           <div className="p-4 border border-gray-200 rounded-lg">
@@ -518,30 +582,143 @@ export default function Integration() {
             </label>
             <select
               id="feature-selection"
+              value={featureSelection}
+              onChange={(e) => {
+                setFeatureSelection(e.target.value);
+                setDiscovery(null);
+              }}
               className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
             >
-              <option>Stability Selection</option>
-              <option>LASSO</option>
-              <option>Random Forest</option>
+              <option value="stability">Stability Selection</option>
+              <option value="lasso">LASSO</option>
+              <option value="random_forest">Random Forest</option>
             </select>
           </div>
           <div className="p-4 border border-gray-200 rounded-lg">
-            <label
-              htmlFor="cross-validation"
-              className="text-sm font-medium text-gray-900 mb-2 block"
-            >
+            <label htmlFor="cross-validation" className="text-sm font-medium text-gray-900 mb-2 block">
               Cross-Validation
             </label>
             <select
               id="cross-validation"
+              value={cvFolds}
+              onChange={(e) => {
+                setCvFolds(Number(e.target.value));
+                setDiscovery(null);
+              }}
               className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
             >
-              <option>5-Fold CV</option>
-              <option>10-Fold CV</option>
-              <option>Leave-One-Out</option>
+              <option value={5}>5-Fold CV</option>
+              <option value={10}>10-Fold CV</option>
+              <option value={0}>Leave-One-Out</option>
             </select>
           </div>
-        </fieldset>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => discoverMutation.mutate()}
+          disabled={!canDiscover || discoverMutation.isPending}
+          className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:bg-gray-300"
+        >
+          {discoverMutation.isPending ? 'Discovering…' : 'Discover Biomarkers'}
+        </button>
+
+        {!canDiscover && (
+          <p className="mt-2 text-xs text-gray-500">
+            Select at least one dataset and name an outcome column to run.
+          </p>
+        )}
+
+        {discoverMutation.isError && (
+          <p className="mt-3 text-sm text-red-700" role="alert">
+            {getApiErrorMessage(discoverMutation.error)}
+          </p>
+        )}
+
+        {discovery && (
+          <div className="mt-6">
+            <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 uppercase">Features tested</p>
+                <p className="text-xl font-semibold text-gray-900">
+                  {discovery.n_features_tested.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 uppercase">Significant</p>
+                <p className="text-xl font-semibold text-gray-900">{discovery.n_significant}</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  FDR ≤ {discovery.fdr_threshold}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 uppercase">Selected</p>
+                <p className="text-xl font-semibold text-gray-900">{discovery.n_selected}</p>
+                <p className="mt-1 text-xs text-gray-500">{discovery.selection_method}</p>
+              </div>
+              <div className="p-3 bg-emerald-50 rounded-lg">
+                <p className="text-xs text-emerald-600 uppercase">Biomarkers</p>
+                <p className="text-xl font-semibold text-emerald-900">
+                  {discovery.biomarkers.length}
+                </p>
+                <p className="mt-1 text-xs text-emerald-700">Both, not either</p>
+              </div>
+            </div>
+
+            {discovery.validation && (
+              <p className="mb-4 text-sm text-gray-700">
+                {discovery.validation.metric.toUpperCase()}{' '}
+                <span className="font-medium">{discovery.validation.score.toFixed(3)}</span>
+                {discovery.validation.std !== null && ` ± ${discovery.validation.std.toFixed(3)}`}{' '}
+                ({discovery.validation.scheme.replace(/_/g, ' ')}, {discovery.validation.folds}{' '}
+                folds)
+              </p>
+            )}
+
+            {discovery.biomarkers.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <caption className="sr-only">
+                    Biomarkers found, best first
+                  </caption>
+                  <thead>
+                    <tr className="text-left text-xs uppercase text-gray-500">
+                      <th scope="col" className="py-2 pr-4">Feature</th>
+                      <th scope="col" className="py-2 pr-4">Dataset</th>
+                      <th scope="col" className="py-2 pr-4">Effect</th>
+                      <th scope="col" className="py-2 pr-4">q-value</th>
+                      <th scope="col" className="py-2">Selection</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {discovery.biomarkers.map((marker) => (
+                      <tr key={`${marker.dataset_id}-${marker.feature}`}>
+                        <td className="py-2 pr-4 font-medium text-gray-900">{marker.feature}</td>
+                        <td className="py-2 pr-4 text-gray-600">
+                          {marker.dataset_name}
+                          <span className="ml-2 text-xs text-gray-400">{marker.omics_type}</span>
+                        </td>
+                        <td className="py-2 pr-4 text-gray-900">{marker.effect.toFixed(2)}</td>
+                        <td className="py-2 pr-4 text-gray-900">{marker.q_value.toExponential(2)}</td>
+                        <td className="py-2 text-gray-900">
+                          {marker.selection_score.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {discovery.notes.length > 0 && (
+              <ul className="mt-4 space-y-1 text-xs text-gray-500" role="note">
+                {discovery.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -89,6 +89,43 @@ export interface IntegrationResult {
   embedding: IntegrationSamplePoint[];
 }
 
+/** A feature that is both significantly associated and retained by selection. */
+export interface Biomarker {
+  feature: string;
+  dataset_id: string;
+  dataset_name: string;
+  omics_type: string;
+  /** log2 fold change (differential) or log hazard ratio (survival). */
+  effect: number;
+  p_value: number;
+  /** Benjamini-Hochberg adjusted p-value. */
+  q_value: number;
+  selection_score: number;
+}
+
+export interface ValidationSummary {
+  scheme: string;
+  folds: number;
+  metric: string;
+  score: number;
+  std: number | null;
+}
+
+export interface BiomarkerResult {
+  analysis_type: string;
+  outcome_column: string;
+  outcome_groups: string[] | null;
+  n_samples: number;
+  n_features_tested: number;
+  n_significant: number;
+  n_selected: number;
+  biomarkers: Biomarker[];
+  selection_method: string;
+  fdr_threshold: number;
+  validation: ValidationSummary | null;
+  notes: string[];
+}
+
 export interface Paginated<T> {
   items: T[];
   total: number;
@@ -256,6 +293,23 @@ export const omics = {
     pathway_file?: string;
   }): Promise<IntegrationResult> {
     const { data } = await apiClient.post<IntegrationResult>('/omics/integrate', payload);
+    return data;
+  },
+};
+
+export const biomarkers = {
+  /** Find features associated with an outcome across the selected datasets. */
+  async discover(payload: {
+    project_id: string;
+    dataset_ids: string[];
+    analysis_type: string;
+    outcome_column: string;
+    groups?: string[] | null;
+    event_column?: string | null;
+    feature_selection: string;
+    cv_folds: number;
+  }): Promise<BiomarkerResult> {
+    const { data } = await apiClient.post<BiomarkerResult>('/biomarkers/discover', payload);
     return data;
   },
 };

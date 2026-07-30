@@ -270,7 +270,25 @@ site/
 # above (lib/, models/) would otherwise swallow. These are first-party source,
 # not build output or ML artifacts.
 # -----------------------------------------------------------------------------
+#
+# Keep this list complete. backend/ml/models/ was missed when the first two
+# were added, so backend/ml/ stayed unimportable -- its __init__ imports
+# backend.ml.models, which had never been committed. Nothing imports
+# backend.ml, so no test caught it.
+#
+# To check for others:
+#   git ls-files --others --ignored --exclude-standard --directory
+#
 !frontend/src/lib/
 !frontend/src/lib/**
 !backend/app/models/
 !backend/app/models/**
+!backend/ml/models/
+!backend/ml/models/**
+
+# A `!dir/**` re-include also un-ignores build output underneath it, so put the
+# artifact patterns back for these subtrees specifically.
+backend/app/models/**/__pycache__/
+backend/ml/models/**/__pycache__/
+**/__pycache__/
+*.py[cod]
