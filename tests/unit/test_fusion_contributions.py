@@ -22,9 +22,7 @@ def _block(name: str, n_features: int, rng, scale: float = 1.0) -> OmicsData:
     frame = pd.DataFrame(
         rng.normal(0.0, scale, size=(N_SAMPLES, n_features)), index=samples, columns=columns
     )
-    return OmicsData(
-        data=frame, feature_names=columns, sample_names=samples, data_type=name
-    )
+    return OmicsData(data=frame, feature_names=columns, sample_names=samples, data_type=name)
 
 
 def _with_shared_signal(block: OmicsData, rng, strength: float, n_cols: int) -> OmicsData:
@@ -50,9 +48,9 @@ class TestPcaAttribution:
         )
 
         assert result.metadata["contribution_basis"] == "pca_loadings"
-        assert result.omics_contributions["transcriptomics"] > result.omics_contributions[
-            "proteomics"
-        ]
+        assert (
+            result.omics_contributions["transcriptomics"] > result.omics_contributions["proteomics"]
+        )
 
     def test_contributions_sum_to_one(self, rng):
         datasets = {
@@ -84,9 +82,9 @@ class TestPcaAttribution:
             {"proteomics": small_loud, "transcriptomics": large_quiet}
         )
 
-        assert result.omics_contributions["proteomics"] > result.omics_contributions[
-            "transcriptomics"
-        ]
+        assert (
+            result.omics_contributions["proteomics"] > result.omics_contributions["transcriptomics"]
+        )
 
     def test_attribution_follows_retained_variance_not_signal_alone(self, rng):
         """Document what the number actually means, so it is not over-read.
@@ -111,9 +109,7 @@ class TestPcaAttribution:
         assert few.omics_contributions["proteomics"] > 0.5
         assert many.omics_contributions["proteomics"] < 0.5
         # More components retained means more of the total variance explained.
-        assert sum(many.metadata["variance_explained"]) > sum(
-            few.metadata["variance_explained"]
-        )
+        assert sum(many.metadata["variance_explained"]) > sum(few.metadata["variance_explained"])
 
     def test_stronger_signal_yields_larger_share(self, rng):
         """Contribution should increase monotonically with signal strength."""
@@ -177,9 +173,7 @@ class TestEarlyFusion:
 class TestDegenerateInputs:
     def test_constant_features_do_not_divide_by_zero(self):
         samples = [f"S{i}" for i in range(10)]
-        flat = pd.DataFrame(
-            np.zeros((10, 4)), index=samples, columns=[f"c{i}" for i in range(4)]
-        )
+        flat = pd.DataFrame(np.zeros((10, 4)), index=samples, columns=[f"c{i}" for i in range(4)])
         block = OmicsData(
             data=flat,
             feature_names=list(flat.columns),

@@ -68,7 +68,8 @@ class DataFusion(ABC):
             # Degenerate input (constant features): fall back to equal shares
             # rather than dividing by zero.
             n = len(per_block) or 1
-            return {name: 1.0 / n for name in per_block}
+            # Immutable value, so fromkeys sharing it across keys is safe.
+            return dict.fromkeys(per_block, 1.0 / n)
         return {name: value / total for name, value in per_block.items()}
 
     @staticmethod
@@ -104,7 +105,7 @@ class DataFusion(ABC):
         total = sum(contributions.values())
         if total <= 0:
             n = len(contributions) or 1
-            return {name: 1.0 / n for name in contributions}
+            return dict.fromkeys(contributions, 1.0 / n)
         return {name: value / total for name, value in contributions.items()}
 
     def _align_samples(self, datasets: dict[str, OmicsData]) -> dict[str, pd.DataFrame]:
@@ -298,10 +299,7 @@ class IntermediateFusion(DataFusion):
             contribution_basis = "pca_loadings"
         else:
             contributions = self._variance_contributions(
-                {
-                    name: self.scalers[name].transform(df.values)
-                    for name, df in aligned.items()
-                }
+                {name: self.scalers[name].transform(df.values) for name, df in aligned.items()}
             )
             contribution_basis = "scaled_variance_share"
 
@@ -319,9 +317,7 @@ class IntermediateFusion(DataFusion):
             metadata={
                 "n_omics": len(datasets),
                 "variance_explained": per_component,
-                "total_variance_explained": (
-                    float(sum(per_component)) if per_component else None
-                ),
+                "total_variance_explained": (float(sum(per_component)) if per_component else None),
                 "contribution_basis": contribution_basis,
             },
             omics_contributions=contributions,

@@ -1,7 +1,7 @@
 """Omics Module Routes."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -15,6 +15,12 @@ from backend.app.models.analysis import Analysis, AnalysisStatus, AnalysisType, 
 from backend.app.models.dataset import Dataset
 from backend.app.models.project import Project
 from backend.app.schemas.analysis import AnalysisResponse
+
+if TYPE_CHECKING:  # imports used for annotations only
+    import numpy as np
+    import pandas as pd
+
+    from backend.omics.integration.data_fusion import DataFusion
 
 logger = logging.getLogger(__name__)
 
@@ -344,14 +350,14 @@ class OmicsIntegrationResponse(BaseModel):
 _SUPPORTED_FUSION_METHODS = {"early_fusion", "intermediate_fusion"}
 
 
-def _load_dataset_frame(storage_path: str):
+def _load_dataset_frame(storage_path: str) -> "pd.DataFrame":
     """Read a dataset's persisted matrix. Blocking; call via a worker thread."""
     import pandas as pd
 
     return pd.read_parquet(storage_path)
 
 
-def _cluster_fused(fused, max_k: int = 8) -> tuple[int, list[int]]:
+def _cluster_fused(fused: "np.ndarray", max_k: int = 8) -> tuple[int, list[int]]:
     """Pick k by silhouette score and return (k, labels).
 
     Reports a single cluster when there are too few samples to score one, rather
@@ -469,6 +475,7 @@ async def integrate_omics(
             data_type=getattr(dataset.omics_type, "value", str(dataset.omics_type)),
         )
 
+    model: DataFusion
     if body.method == "early_fusion":
         model = EarlyFusion(reduce_dim=body.n_components)
     else:

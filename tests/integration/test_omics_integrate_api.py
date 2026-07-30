@@ -120,9 +120,7 @@ class TestValidation:
         assert response.status_code == 400
         assert "not implemented" in response.json()["detail"]
 
-    def test_missing_project_is_404(
-        self, test_client, auth_headers, db_override, auth_as_owner
-    ):
+    def test_missing_project_is_404(self, test_client, auth_headers, db_override, auth_as_owner):
         _returns(db_override, None, [])
         response = test_client.post(
             "/api/v1/omics/integrate",
@@ -213,9 +211,7 @@ class TestComputedResult:
 
         # The embedding must describe every integrated sample.
         assert len(body["embedding"]) == N_SAMPLES
-        assert {p["sample"] for p in body["embedding"]} == {
-            f"S{i}" for i in range(N_SAMPLES)
-        }
+        assert {p["sample"] for p in body["embedding"]} == {f"S{i}" for i in range(N_SAMPLES)}
         assert body["n_clusters"] >= 1
         assert all(0 <= p["cluster"] < max(body["n_clusters"], 1) for p in body["embedding"])
 
@@ -289,6 +285,6 @@ class TestComputedResult:
         )
 
         assert response.status_code == 409
-        assert "common samples" in response.json()["detail"] or "aligned" in response.json()[
-            "detail"
-        ]
+        assert (
+            "common samples" in response.json()["detail"] or "aligned" in response.json()["detail"]
+        )
