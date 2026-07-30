@@ -252,6 +252,8 @@ export const omics = {
     dataset_ids: string[];
     method: string;
     n_components?: number;
+    /** GMT file of pathway definitions; required by pathway_integration. */
+    pathway_file?: string;
   }): Promise<IntegrationResult> {
     const { data } = await apiClient.post<IntegrationResult>('/omics/integrate', payload);
     return data;

@@ -218,3 +218,71 @@ describe('Integration page', () => {
     expect(screen.getByLabelText('Analysis Type')).toBeDisabled();
   });
 });
+
+describe('Integration page — network methods', () => {
+  const NETWORK_RESULT: IntegrationResult = {
+    ...RESULT,
+    method: 'snf',
+    variance_explained: null,
+    contribution_basis: 'not_applicable',
+    contributions: [],
+  };
+
+  beforeEach(() => {
+    integrate.mockResolvedValue(NETWORK_RESULT);
+  });
+
+  async function runSnf(user: ReturnType<typeof userEvent.setup>) {
+    await selectTwoDatasets(user);
+    await user.click(screen.getByRole('radio', { name: /Similarity Network Fusion/ }));
+    await user.click(screen.getByRole('button', { name: /Run Integration/ }));
+    await screen.findByText('Integration Results');
+  }
+
+  it('says why no per-dataset attribution is shown', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await runSnf(user);
+
+    expect(screen.getByText(/does not attribute the result across datasets/)).toBeInTheDocument();
+  });
+
+  it('does not show the feature-budget caveat, which does not apply here', async () => {
+    // Caught in the browser, not by the earlier tests: the caveat was gated on
+    // "basis is not pca_loadings", so it fired for the network methods too and
+    // contradicted the message directly above it.
+    const user = userEvent.setup();
+    renderPage();
+    await runSnf(user);
+
+    expect(screen.queryByText(/scaled feature budget/)).not.toBeInTheDocument();
+  });
+
+  it('captions the plot with the clustering that was actually used', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await runSnf(user);
+
+    expect(screen.getByText(/Spectral embedding of the fused similarity network/)).toBeInTheDocument();
+    expect(screen.queryByText(/First two components of the fused space/)).not.toBeInTheDocument();
+  });
+
+  it('renders n/a rather than a number when there is no variance to report', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await runSnf(user);
+
+    expect(screen.getByText('n/a')).toBeInTheDocument();
+  });
+
+  it('asks for pathway definitions only when that method is selected', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+
+    expect(screen.queryByLabelText(/Pathway definitions/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /Pathway-level Integration/ }));
+    expect(await screen.findByLabelText(/Pathway definitions/)).toBeInTheDocument();
+  });
+});

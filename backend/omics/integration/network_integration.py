@@ -89,6 +89,18 @@ class SimilarityNetworkFusion:
         omics_names = list(networks.keys())
         n_omics = len(omics_names)
 
+        if n_omics < 2:
+            # The cross-diffusion step averages over the *other* networks, so a
+            # single input divided by zero and returned an all-NaN matrix. There
+            # is nothing to fuse here, so return the one network as-is.
+            only = omics_names[0]
+            return NetworkResult(
+                fused_network=networks[only],
+                sample_names=sample_names,
+                individual_networks=networks,
+                metadata={"n_omics": 1, "fused": False, "omics_types": omics_names},
+            )
+
         for _ in range(self.n_iterations):
             P_new = {}
             for name in omics_names:

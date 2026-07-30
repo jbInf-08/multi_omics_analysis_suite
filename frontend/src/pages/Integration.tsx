@@ -19,24 +19,48 @@ import {
 import { useAuthStore } from '../stores/auth';
 
 /**
- * Only methods the API implements. The list previously advertised six,
- * including three that no endpoint backed; offering them here would produce a
- * 400 the moment a user picked one.
+ * Only methods the API implements. Each is listed with what it actually
+ * reports: the decomposition methods attribute variance across the omics
+ * blocks, the network methods do not, and pathway needs definitions supplied.
  */
 const integrationMethods = [
   {
     id: 'intermediate_fusion',
     name: 'Intermediate Fusion',
     description: 'Joint dimensionality reduction across the selected datasets',
-    category: 'Data Fusion',
+    reports: 'Reports variance explained and per-dataset contributions.',
   },
   {
     id: 'early_fusion',
     name: 'Early Fusion',
     description: 'Concatenate scaled features, then reduce jointly',
-    category: 'Data Fusion',
+    reports: 'Reports variance explained and per-dataset contributions.',
+  },
+  {
+    id: 'snf',
+    name: 'Similarity Network Fusion',
+    description: 'Fuse patient similarity networks from each omics',
+    reports: 'Clusters and sample layout only — no per-dataset attribution.',
+  },
+  {
+    id: 'network_integration',
+    name: 'Network Integration',
+    description: 'Average the per-omics sample similarity networks',
+    reports: 'Clusters and sample layout only — no per-dataset attribution.',
+  },
+  {
+    id: 'pathway_integration',
+    name: 'Pathway-level Integration',
+    description: 'Score samples against pathway definitions, then integrate',
+    reports: 'Requires a GMT file of pathway definitions.',
   },
 ];
+
+/** Methods that need pathway definitions before they can run. */
+const PATHWAY_METHODS = new Set(['pathway_integration']);
+
+/** Methods that fuse similarity networks rather than decomposing features. */
+const NETWORK_METHODS = new Set(['snf', 'network_integration']);
 
 const OMICS_FILL: Record<string, string> = {
   transcriptomics: 'fill-blue-500',
@@ -65,6 +89,7 @@ function formatPercent(value: number): string {
 /** Scatter of the fused space, coloured by cluster assignment. */
 function EmbeddingPlot({ result }: { result: IntegrationResult }) {
   const points = result.embedding;
+  const isNetwork = NETWORK_METHODS.has(result.method);
 
   const scaled = useMemo(() => {
     if (points.length === 0) return [];
@@ -114,8 +139,9 @@ function EmbeddingPlot({ result }: { result: IntegrationResult }) {
         ))}
       </svg>
       <figcaption className="mt-2 text-xs text-gray-500">
-        First two components of the fused space. Colour indicates the cluster assigned by k-means,
-        with k chosen by silhouette score.
+        {isNetwork
+          ? 'Spectral embedding of the fused similarity network. Colour indicates the cluster assigned by spectral clustering, with k chosen by silhouette score.'
+          : 'First two components of the fused space. Colour indicates the cluster assigned by k-means, with k chosen by silhouette score.'}
       </figcaption>
     </figure>
   );
@@ -127,6 +153,7 @@ export default function Integration() {
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
   const [selectedMethod, setSelectedMethod] = useState('intermediate_fusion');
   const [nComponents, setNComponents] = useState(10);
+  const [pathwayFile, setPathwayFile] = useState('');
   const [result, setResult] = useState<IntegrationResult | null>(null);
 
   const { data: projectsData } = useQuery({
@@ -151,6 +178,7 @@ export default function Integration() {
         dataset_ids: selectedDatasetIds,
         method: selectedMethod,
         n_components: nComponents,
+        pathway_file: pathwayFile.trim() || undefined,
       }),
     onSuccess: (data) => {
       setResult(data);
@@ -276,10 +304,34 @@ export default function Integration() {
                 <span>
                   <span className="block text-sm font-medium text-gray-900">{method.name}</span>
                   <span className="block text-xs text-gray-500">{method.description}</span>
+                  <span className="mt-1 block text-xs text-gray-400">{method.reports}</span>
                 </span>
               </label>
             ))}
           </fieldset>
+
+          {PATHWAY_METHODS.has(selectedMethod) && (
+            <div className="mt-4">
+              <label htmlFor="pathways" className="block text-sm font-medium text-gray-700 mb-1">
+                Pathway definitions (GMT)
+              </label>
+              <input
+                id="pathways"
+                type="text"
+                value={pathwayFile}
+                placeholder="/path/to/pathways.gmt"
+                onChange={(e) => {
+                  setPathwayFile(e.target.value);
+                  setResult(null);
+                }}
+                className="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Required. The built-in gene sets are illustrative examples, not a basis for
+                interpreting real data, so this method will not run without a file.
+              </p>
+            </div>
+          )}
 
           <div className="mt-4">
             <label htmlFor="components" className="block text-sm font-medium text-gray-700 mb-1">
@@ -337,6 +389,13 @@ export default function Integration() {
 
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-900 mb-4">Omics Contributions</h3>
+              {result.contributions.length === 0 && (
+                <p className="text-sm text-gray-500">
+                  This method does not attribute the result across datasets. The similarity
+                  networks are fused into a consensus, and no per-dataset share can be read off
+                  it that would hold up, so none is shown.
+                </p>
+              )}
               <div className="space-y-3">
                 {result.contributions.map((entry) => (
                   <div key={entry.dataset_id}>
@@ -370,7 +429,7 @@ export default function Integration() {
                 ))}
               </div>
 
-              {result.contribution_basis !== 'pca_loadings' && (
+              {result.contribution_basis === 'scaled_variance_share' && (
                 <p className="mt-4 text-xs text-amber-700" role="note">
                   These shares reflect each dataset&apos;s portion of the scaled feature budget, not
                   how much signal it carries. Retain components to get a variance-based attribution.
