@@ -300,7 +300,24 @@ class OmicsIntegrationRequest(BaseModel):
     project_id: UUID
     dataset_ids: list[UUID] = Field(..., min_length=2, description="At least two datasets")
     method: str = Field("intermediate_fusion", description="Fusion method identifier")
-    n_components: int = Field(10, ge=2, le=100)
+    n_components: int = Field(
+        10,
+        ge=2,
+        le=100,
+        description=(
+            "Components retained by the decomposition methods. Contributions are "
+            "shares of the variance these components retain, so this changes what "
+            "they mean; ignored by the network methods."
+        ),
+    )
+    pathway_file: str | None = Field(
+        None,
+        description=(
+            "Path to a GMT file of pathway definitions. Required by "
+            "pathway_integration -- the built-in sets are illustrative examples "
+            "and are not a basis for interpreting real data."
+        ),
+    )
 
 
 class OmicsContribution(BaseModel):
@@ -344,10 +361,24 @@ class OmicsIntegrationResponse(BaseModel):
     embedding: list[IntegrationSamplePoint]
 
 
-#: Method identifiers the UI offers, mapped to the fusion implementations that
-#: are wired up. Anything else is rejected rather than silently falling back to
-#: a different method than the caller asked for.
-_SUPPORTED_FUSION_METHODS = {"early_fusion", "intermediate_fusion"}
+#: Methods backed by a joint decomposition. These produce a sample x component
+#: matrix, so variance explained is meaningful and contributions come from the
+#: component loadings.
+_DECOMPOSITION_METHODS = {"early_fusion", "intermediate_fusion"}
+
+#: Methods backed by a sample-similarity network. These produce a samples x
+#: samples matrix instead, so there is no variance to explain; samples are
+#: positioned by spectral embedding and contributions measure how far each
+#: omics' own similarity structure agrees with the consensus.
+_NETWORK_METHODS = {"snf", "network_integration"}
+
+#: Pathway-level integration. Kept separate because it needs pathway
+#: definitions supplied by the caller.
+_PATHWAY_METHODS = {"pathway_integration"}
+
+#: Anything else is rejected rather than silently falling back to a different
+#: method than the caller asked for.
+_SUPPORTED_FUSION_METHODS = _DECOMPOSITION_METHODS | _NETWORK_METHODS | _PATHWAY_METHODS
 
 
 def _for_log(value: object, limit: int = 200) -> str:
@@ -399,6 +430,316 @@ def _cluster_fused(fused: "np.ndarray", max_k: int = 8) -> tuple[int, list[int]]
             best_k, best_score, best_labels = k, score, [int(x) for x in labels]
 
     return best_k, best_labels
+
+
+def _spectral_coordinates(fused: "np.ndarray") -> "np.ndarray":
+    """Place samples in 2D from a similarity matrix.
+
+    Uses the leading eigenvectors of the normalised affinity, which is the
+    standard spectral embedding. Falls back to zeros when the matrix is too
+    small or degenerate to decompose, so the caller still gets one point per
+    sample rather than an error.
+    """
+    import numpy as np
+
+    n = fused.shape[0]
+    if n < 3:
+        return np.zeros((n, 2))
+
+    affinity = np.asarray(fused, dtype=float)
+    affinity = (affinity + affinity.T) / 2.0  # enforce symmetry
+    degree = affinity.sum(axis=1)
+    degree[degree == 0] = 1.0
+    normalised = affinity / np.sqrt(np.outer(degree, degree))
+
+    try:
+        eigenvalues, eigenvectors = np.linalg.eigh(normalised)
+    except np.linalg.LinAlgError:
+        return np.zeros((n, 2))
+
+    # Largest eigenvalues last from eigh; skip the trivial leading component.
+    order = np.argsort(eigenvalues)[::-1]
+    picked = order[1:3] if len(order) >= 3 else order[:2]
+    coords = eigenvectors[:, picked]
+    if coords.shape[1] < 2:
+        coords = np.hstack([coords, np.zeros((n, 2 - coords.shape[1]))])
+    return coords
+
+
+def _cluster_network(fused: "np.ndarray", max_k: int = 8) -> tuple[int, list[int]]:
+    """Spectral clustering on a similarity matrix, k chosen by silhouette.
+
+    Mirrors _cluster_fused but scores on the precomputed affinity rather than a
+    coordinate matrix. Reports a single cluster when there are too few samples
+    to score one.
+    """
+    import numpy as np
+    from sklearn.cluster import SpectralClustering
+    from sklearn.metrics import silhouette_score
+
+    n = int(fused.shape[0])
+    if n < 4:
+        return 1, [0] * n
+
+    affinity = np.asarray(fused, dtype=float)
+    affinity = (affinity + affinity.T) / 2.0
+    # silhouette_score needs a distance; affinity is a similarity.
+    spread = affinity.max() or 1.0
+    distance = spread - affinity
+    np.fill_diagonal(distance, 0.0)
+
+    best_k, best_score, best_labels = 1, -1.0, [0] * n
+    for k in range(2, min(max_k, n - 1) + 1):
+        try:
+            labels = SpectralClustering(
+                n_clusters=k, affinity="precomputed", random_state=42
+            ).fit_predict(affinity)
+        except Exception:
+            continue
+        if len(set(labels)) < 2:
+            continue
+        score = float(silhouette_score(distance, labels, metric="precomputed"))
+        if score > best_score:
+            best_k, best_score, best_labels = k, score, [int(x) for x in labels]
+
+    return best_k, best_labels
+
+
+async def _integrate_by_network(
+    body: OmicsIntegrationRequest,
+    omics_inputs: dict,
+    by_key: dict,
+    total_features: int,
+) -> OmicsIntegrationResponse:
+    """Integrate through a fused sample-similarity network.
+
+    Covers snf (Wang et al., Nature Methods 2014) and the co-expression style
+    sample network. Both yield a samples x samples matrix rather than a
+    sample x component one, so there is no variance to report: samples are
+    positioned by spectral embedding and clustered spectrally, and
+    contributions measure agreement with the consensus network instead of
+    retained variance. The response records that difference in
+    contribution_basis so the two are not read as the same quantity.
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    from backend.omics.integration.network_integration import (
+        NetworkIntegrator,
+        NetworkResult,
+        SimilarityNetworkFusion,
+    )
+
+    def _run() -> "NetworkResult":
+        if body.method == "snf":
+            return SimilarityNetworkFusion().fuse(omics_inputs)
+
+        # network_integration: build one sample network per omics, then take
+        # their mean as the consensus. NetworkIntegrator.build_sample_network is
+        # the repo's own construction, so this stays consistent with it.
+        import numpy as np
+
+        from backend.omics.base.omics_base import OmicsData
+        from backend.omics.integration.data_fusion import EarlyFusion
+
+        # build_sample_network reads data.data.values directly, so the blocks
+        # must be restricted to shared samples first or the per-omics matrices
+        # come out different sizes and cannot be averaged.
+        aligned = EarlyFusion()._align_samples(omics_inputs)
+        shared = list(next(iter(aligned.values())).index)
+
+        integrator = NetworkIntegrator()
+        individual = {
+            name: np.asarray(
+                integrator.build_sample_network(
+                    OmicsData(
+                        data=frame,
+                        feature_names=[str(c) for c in frame.columns],
+                        sample_names=[str(i) for i in frame.index],
+                        data_type=name,
+                    )
+                )
+            )
+            for name, frame in aligned.items()
+        }
+        stacked = np.stack(list(individual.values()))
+        fused = stacked.mean(axis=0)
+
+        return NetworkResult(
+            fused_network=fused,
+            sample_names=[str(x) for x in shared],
+            individual_networks=individual,
+            metadata={"method": "network_integration"},
+        )
+
+    try:
+        result = await run_in_threadpool(_run)
+    except ValueError as exc:
+        logger.info(
+            "Network integration rejected for project %s: %s",
+            _for_log(body.project_id),
+            _for_log(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Datasets could not be aligned. They must share sample identifiers "
+                "in their row index."
+            ),
+        ) from exc
+
+    fused = result.fused_network
+    if fused.shape[0] == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected datasets share no common samples, so they cannot be integrated.",
+        )
+
+    coords = await run_in_threadpool(_spectral_coordinates, fused)
+    n_clusters, labels = await run_in_threadpool(_cluster_network, fused)
+
+    return OmicsIntegrationResponse(
+        method=body.method,
+        n_samples=int(fused.shape[0]),
+        n_features=total_features,
+        n_omics=len(omics_inputs),
+        # A similarity network has no decomposition, so nothing to report here
+        # rather than a number that would not mean what the label says.
+        variance_explained=None,
+        contribution_basis="not_applicable",
+        # No per-omics attribution is reported for the network methods. The
+        # obvious candidate -- correlating each input network against the fused
+        # one -- is not trustworthy: SNF iterates the inputs toward each other,
+        # and the resulting share moved from 0.00 to 0.44 for the same noise
+        # block simply by changing its feature count. Leave-one-out influence
+        # would be sounder but needs a fusion per omics. Rather than draw a bar
+        # chart from a number that does not hold up, this stays empty and the UI
+        # says so.
+        contributions=[],
+        n_clusters=n_clusters,
+        embedding=[
+            IntegrationSamplePoint(
+                sample=sample,
+                x=float(coords[i, 0]),
+                y=float(coords[i, 1]),
+                cluster=labels[i],
+            )
+            for i, sample in enumerate(result.sample_names)
+        ],
+    )
+
+
+async def _integrate_by_pathway(
+    body: OmicsIntegrationRequest,
+    omics_inputs: dict,
+    by_key: dict,
+    total_features: int,
+) -> OmicsIntegrationResponse:
+    """Integrate at the pathway level.
+
+    Requires pathway definitions from the caller. PathwayIntegrator will happily
+    fall back to eight hardcoded example gene sets of a few genes each, which
+    its own source calls "Simplified example pathways" -- scoring real data
+    against those would produce numbers that look like results and are not, so
+    the request is refused instead.
+    """
+    import numpy as np
+    from starlette.concurrency import run_in_threadpool
+
+    from backend.omics.integration.data_fusion import DataFusion
+    from backend.omics.integration.pathway_integration import PathwayIntegrator
+
+    if not body.pathway_file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "pathway_integration needs pathway definitions: supply pathway_file "
+                "with a GMT file. The built-in sets are illustrative examples, not a "
+                "basis for interpreting real data."
+            ),
+        )
+
+    def _run() -> tuple[dict, "np.ndarray"]:
+        import numpy as np
+
+        integrator = PathwayIntegrator().load_pathways(body.pathway_file)
+        scores = {
+            name: integrator.compute_pathway_scores(data) for name, data in omics_inputs.items()
+        }
+        # Pathway scores are samples x pathways per omics; concatenating gives a
+        # joint pathway-space representation the same shape as a fused matrix.
+        frames = [np.asarray(getattr(s, "scores", s)) for s in scores.values()]
+        return scores, np.hstack(frames)
+
+    try:
+        per_omics, joint = await run_in_threadpool(_run)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pathway file not found: {_for_log(body.pathway_file)}",
+        ) from exc
+    except ValueError as exc:
+        logger.info(
+            "Pathway integration rejected for project %s: %s",
+            _for_log(body.project_id),
+            _for_log(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Datasets could not be integrated at pathway level. They must share "
+                "sample identifiers and carry features that match the pathway file."
+            ),
+        ) from exc
+
+    if joint.shape[0] == 0 or joint.shape[1] == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "No pathway scores could be computed. Check that the feature "
+                "identifiers in these datasets match the pathway file."
+            ),
+        )
+
+    n_clusters, labels = await run_in_threadpool(_cluster_fused, joint)
+    # Each omics' share of the joint pathway space, by variance carried.
+    widths = {
+        name: int(np.asarray(getattr(s, "scores", s)).shape[1]) for name, s in per_omics.items()
+    }
+    blocks = {}
+    start = 0
+    for name, width in widths.items():
+        blocks[name] = joint[:, start : start + width]
+        start += width
+    shares = DataFusion._variance_contributions(blocks)
+
+    first = next(iter(omics_inputs.values()))
+    return OmicsIntegrationResponse(
+        method="pathway_integration",
+        n_samples=int(joint.shape[0]),
+        n_features=total_features,
+        n_omics=len(omics_inputs),
+        variance_explained=None,
+        contribution_basis="pathway_score_variance",
+        contributions=[
+            OmicsContribution(
+                dataset_id=by_key[key].id,
+                dataset_name=by_key[key].name,
+                omics_type=getattr(by_key[key].omics_type, "value", str(by_key[key].omics_type)),
+                contribution=float(share),
+            )
+            for key, share in shares.items()
+        ],
+        n_clusters=n_clusters,
+        embedding=[
+            IntegrationSamplePoint(
+                sample=sample,
+                x=float(joint[i, 0]),
+                y=float(joint[i, 1]) if joint.shape[1] > 1 else 0.0,
+                cluster=labels[i],
+            )
+            for i, sample in enumerate(first.sample_names[: joint.shape[0]])
+        ],
+    )
 
 
 @router.post("/integrate", response_model=OmicsIntegrationResponse)
@@ -496,6 +837,12 @@ async def integrate_omics(
             sample_names=[str(i) for i in frame.index],
             data_type=getattr(dataset.omics_type, "value", str(dataset.omics_type)),
         )
+
+    if body.method in _NETWORK_METHODS:
+        return await _integrate_by_network(body, omics_inputs, by_key, total_features)
+
+    if body.method in _PATHWAY_METHODS:
+        return await _integrate_by_pathway(body, omics_inputs, by_key, total_features)
 
     model: DataFusion
     if body.method == "early_fusion":
