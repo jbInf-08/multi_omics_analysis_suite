@@ -1,16 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IntegrationResult } from '../lib/api';
 
 const integrate = vi.fn();
+const discover = vi.fn();
 const listProjects = vi.fn();
 const listDatasets = vi.fn();
 
 vi.mock('../lib/api', () => ({
   omics: { integrate: (...args: unknown[]) => integrate(...args) },
+  biomarkers: { discover: (...args: unknown[]) => discover(...args) },
   projects: { list: (...args: unknown[]) => listProjects(...args) },
   datasets: { list: (...args: unknown[]) => listDatasets(...args) },
   getApiErrorMessage: (e: unknown) => (e instanceof Error ? e.message : 'error'),
@@ -209,14 +211,6 @@ describe('Integration page', () => {
     expect(screen.queryByText('Integration Results')).not.toBeInTheDocument();
   });
 
-  it('does not present the unimplemented biomarker step as usable', async () => {
-    renderPage();
-    await screen.findByText('Biomarker Discovery');
-
-    expect(screen.getByText('Not yet available')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Discover Biomarkers/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Analysis Type')).toBeDisabled();
-  });
 });
 
 describe('Integration page — network methods', () => {
@@ -284,5 +278,134 @@ describe('Integration page — network methods', () => {
 
     await user.click(screen.getByRole('radio', { name: /Pathway-level Integration/ }));
     expect(await screen.findByLabelText(/Pathway definitions/)).toBeInTheDocument();
+  });
+});
+
+const DISCOVERY = {
+  analysis_type: 'differential',
+  outcome_column: 'response',
+  outcome_groups: ['responder', 'non_responder'],
+  n_samples: 60,
+  n_features_tested: 25,
+  n_significant: 4,
+  n_selected: 9,
+  biomarkers: [
+    {
+      feature: 'rna_0',
+      dataset_id: RNA_ID,
+      dataset_name: 'RNA-seq',
+      omics_type: 'transcriptomics',
+      effect: 1.62,
+      p_value: 1e-12,
+      q_value: 2.5e-11,
+      selection_score: 0.91,
+    },
+  ],
+  selection_method: 'stability',
+  fdr_threshold: 0.05,
+  validation: { scheme: 'stratified_k_fold', folds: 5, metric: 'roc_auc', score: 0.94, std: 0.03 },
+  notes: ['Cross-validated score is reported on features chosen using all samples.'],
+};
+
+describe('Integration page — biomarker discovery', () => {
+  beforeEach(() => {
+    discover.mockResolvedValue(DISCOVERY);
+  });
+
+  it('cannot run without an outcome column', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+
+    const button = screen.getByRole('button', { name: /Discover Biomarkers/ });
+    expect(button).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Outcome column'), 'response');
+    expect(button).toBeEnabled();
+  });
+
+  it('sends the three chosen options to the API', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+    await user.type(screen.getByLabelText('Outcome column'), 'response');
+    await user.selectOptions(screen.getByLabelText('Feature Selection'), 'lasso');
+    await user.selectOptions(screen.getByLabelText('Cross-Validation'), '10');
+    await user.click(screen.getByRole('button', { name: /Discover Biomarkers/ }));
+
+    await waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    expect(discover).toHaveBeenCalledWith(
+      expect.objectContaining({
+        analysis_type: 'differential',
+        outcome_column: 'response',
+        feature_selection: 'lasso',
+        cv_folds: 10,
+      })
+    );
+  });
+
+  it('asks for an event column only for survival', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+
+    expect(screen.queryByLabelText('Event column')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Analysis Type'), 'survival');
+    expect(await screen.findByLabelText('Event column')).toBeInTheDocument();
+  });
+
+  it('shows both kinds of evidence for each biomarker', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+    await user.type(screen.getByLabelText('Outcome column'), 'response');
+    await user.click(screen.getByRole('button', { name: /Discover Biomarkers/ }));
+
+    await screen.findByText('rna_0');
+    // Effect and q-value (significance) plus the selection score.
+    expect(screen.getByText('1.62')).toBeInTheDocument();
+    expect(screen.getByText('2.50e-11')).toBeInTheDocument();
+    expect(screen.getByText('0.91')).toBeInTheDocument();
+    // And which dataset it came from -- scoped to the results row, since the
+    // dataset name also appears in the picker above.
+    const row = screen.getByText('rna_0').closest('tr')!;
+    expect(within(row).getByText(/RNA-seq/)).toBeInTheDocument();
+    expect(within(row).getByText('transcriptomics')).toBeInTheDocument();
+  });
+
+  it('reports significant and selected counts separately from the intersection', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+    await user.type(screen.getByLabelText('Outcome column'), 'response');
+    await user.click(screen.getByRole('button', { name: /Discover Biomarkers/ }));
+
+    await screen.findByText('rna_0');
+    expect(screen.getByText('4')).toBeInTheDocument();  // significant
+    expect(screen.getByText('9')).toBeInTheDocument();  // selected
+    expect(screen.getByText('1')).toBeInTheDocument();  // the intersection
+  });
+
+  it('carries the caveat that comes with the cross-validated score', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+    await user.type(screen.getByLabelText('Outcome column'), 'response');
+    await user.click(screen.getByRole('button', { name: /Discover Biomarkers/ }));
+
+    await screen.findByText('rna_0');
+    expect(screen.getByText(/ROC_AUC/i)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(/chosen using all samples/);
+  });
+
+  it('surfaces a failure instead of a table', async () => {
+    discover.mockRejectedValue(new Error("Outcome column 'nope' was not found"));
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwoDatasets(user);
+    await user.type(screen.getByLabelText('Outcome column'), 'nope');
+    await user.click(screen.getByRole('button', { name: /Discover Biomarkers/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('was not found');
   });
 });
