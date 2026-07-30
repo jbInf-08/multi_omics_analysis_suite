@@ -1,7 +1,7 @@
 """Omics Module Routes."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,8 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import get_db
 from backend.app.core.security import TokenPayload, get_current_user
 from backend.app.models.analysis import Analysis, AnalysisStatus, AnalysisType, utc_now
+from backend.app.models.dataset import Dataset
 from backend.app.models.project import Project
 from backend.app.schemas.analysis import AnalysisResponse
+
+if TYPE_CHECKING:  # imports used for annotations only
+    import numpy as np
+    import pandas as pd
+
+    from backend.omics.integration.data_fusion import DataFusion
 
 logger = logging.getLogger(__name__)
 
@@ -280,3 +287,281 @@ async def run_module_analysis(
         await db.refresh(analysis)
 
     return analysis
+
+
+# ---------------------------------------------------------------------------
+# Multi-omics integration
+# ---------------------------------------------------------------------------
+
+
+class OmicsIntegrationRequest(BaseModel):
+    """Body for running a multi-omics integration over stored datasets."""
+
+    project_id: UUID
+    dataset_ids: list[UUID] = Field(..., min_length=2, description="At least two datasets")
+    method: str = Field("intermediate_fusion", description="Fusion method identifier")
+    n_components: int = Field(10, ge=2, le=100)
+
+
+class OmicsContribution(BaseModel):
+    """One omics block's share of the integrated signal."""
+
+    dataset_id: UUID
+    dataset_name: str
+    omics_type: str
+    contribution: float = Field(..., description="Share of the integrated signal, 0-1")
+
+
+class IntegrationSamplePoint(BaseModel):
+    """A sample positioned in the first two dimensions of the fused space."""
+
+    sample: str
+    x: float
+    y: float
+    cluster: int
+
+
+class OmicsIntegrationResponse(BaseModel):
+    """Computed result of a multi-omics integration."""
+
+    method: str
+    n_samples: int
+    n_features: int
+    n_omics: int
+    variance_explained: float | None = Field(
+        None, description="Share of variance retained by the fused representation, 0-1"
+    )
+    contribution_basis: str = Field(
+        ...,
+        description=(
+            "How contributions were derived. 'pca_loadings' attributes retained "
+            "variance via component loadings; 'scaled_variance_share' is only a "
+            "feature-count proxy and is not a signal measure."
+        ),
+    )
+    contributions: list[OmicsContribution]
+    n_clusters: int
+    embedding: list[IntegrationSamplePoint]
+
+
+#: Method identifiers the UI offers, mapped to the fusion implementations that
+#: are wired up. Anything else is rejected rather than silently falling back to
+#: a different method than the caller asked for.
+_SUPPORTED_FUSION_METHODS = {"early_fusion", "intermediate_fusion"}
+
+
+def _for_log(value: object, limit: int = 200) -> str:
+    """Flatten a value to a single safe line for logging.
+
+    Messages here can carry data read from user-uploaded files -- sample
+    identifiers taken from a parquet row index, pandas' own error text -- so
+    newlines and control characters are stripped before logging. Without that,
+    a crafted identifier could inject additional log lines.
+    """
+    # The explicit newline replacement is deliberate and comes first: it is the
+    # form CodeQL's py/log-injection query recognises as a sanitiser, and it is
+    # what actually prevents a forged log line. The isprintable pass then takes
+    # care of the remaining control characters.
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in text)
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 1] + "…"
+    return cleaned
+
+
+def _load_dataset_frame(storage_path: str) -> "pd.DataFrame":
+    """Read a dataset's persisted matrix. Blocking; call via a worker thread."""
+    import pandas as pd
+
+    return pd.read_parquet(storage_path)
+
+
+def _cluster_fused(fused: "np.ndarray", max_k: int = 8) -> tuple[int, list[int]]:
+    """Pick k by silhouette score and return (k, labels).
+
+    Reports a single cluster when there are too few samples to score one, rather
+    than inventing a partition.
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    n_samples = int(fused.shape[0])
+    if n_samples < 4:
+        return 1, [0] * n_samples
+
+    best_k, best_score, best_labels = 1, -1.0, [0] * n_samples
+    for k in range(2, min(max_k, n_samples - 1) + 1):
+        labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(fused)
+        if len(set(labels)) < 2:
+            continue
+        score = float(silhouette_score(fused, labels))
+        if score > best_score:
+            best_k, best_score, best_labels = k, score, [int(x) for x in labels]
+
+    return best_k, best_labels
+
+
+@router.post("/integrate", response_model=OmicsIntegrationResponse)
+async def integrate_omics(
+    body: OmicsIntegrationRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OmicsIntegrationResponse:
+    """Run a multi-omics integration and return the computed result.
+
+    Synchronous on purpose: the fusion is an in-memory scikit-learn
+    decomposition over already-materialised matrices, and the caller renders the
+    result directly. Long-running module analyses still go through Celery via
+    POST /modules/{module_name}/analyze.
+    """
+    if body.method not in _SUPPORTED_FUSION_METHODS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Integration method '{body.method}' is not implemented. "
+                f"Choose one of: {sorted(_SUPPORTED_FUSION_METHODS)}"
+            ),
+        )
+
+    result = await db.execute(select(Project).where(Project.id == body.project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if str(project.owner_id) != current_user.sub:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to read datasets in this project",
+        )
+
+    result = await db.execute(
+        select(Dataset).where(
+            Dataset.id.in_(body.dataset_ids), Dataset.project_id == body.project_id
+        )
+    )
+    datasets = list(result.scalars().all())
+
+    found = {d.id for d in datasets}
+    missing = [str(d) for d in body.dataset_ids if d not in found]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasets not found in this project: {missing}",
+        )
+
+    unreadable = [d.name for d in datasets if not d.storage_path]
+    if unreadable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Datasets have no stored data yet: {unreadable}",
+        )
+
+    from starlette.concurrency import run_in_threadpool
+
+    from backend.omics.base.omics_base import OmicsData
+    from backend.omics.integration.data_fusion import EarlyFusion, IntermediateFusion
+
+    # Keyed by dataset id so two datasets of the same omics type stay distinct.
+    omics_inputs: dict[str, OmicsData] = {}
+    by_key: dict[str, Dataset] = {}
+    total_features = 0
+
+    for dataset in datasets:
+        try:
+            frame = await run_in_threadpool(_load_dataset_frame, dataset.storage_path)
+        except Exception as exc:
+            logger.error(
+                "Failed to read dataset %s at %s: %s",
+                dataset.id,
+                _for_log(dataset.storage_path),
+                _for_log(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Could not read stored data for dataset '{dataset.name}'",
+            ) from exc
+
+        frame = frame.select_dtypes(include="number")
+        if frame.empty:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Dataset '{dataset.name}' has no numeric features to integrate",
+            )
+
+        key = str(dataset.id)
+        by_key[key] = dataset
+        total_features += int(frame.shape[1])
+        omics_inputs[key] = OmicsData(
+            data=frame,
+            feature_names=[str(c) for c in frame.columns],
+            sample_names=[str(i) for i in frame.index],
+            data_type=getattr(dataset.omics_type, "value", str(dataset.omics_type)),
+        )
+
+    model: DataFusion
+    if body.method == "early_fusion":
+        model = EarlyFusion(reduce_dim=body.n_components)
+    else:
+        model = IntermediateFusion(n_components=body.n_components)
+
+    try:
+        fusion = await run_in_threadpool(model.fit_transform, omics_inputs)
+    except ValueError as exc:
+        # _align_samples raises when the datasets share no sample identifiers.
+        logger.info(
+            "Integration rejected for project %s: %s",
+            _for_log(body.project_id),
+            _for_log(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Datasets could not be aligned. They must share sample identifiers "
+                "in their row index."
+            ),
+        ) from exc
+
+    if fusion.fused_data.shape[0] == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected datasets share no common samples, so they cannot be integrated.",
+        )
+
+    n_clusters, labels = await run_in_threadpool(_cluster_fused, fusion.fused_data)
+
+    variance_explained = fusion.metadata.get("total_variance_explained")
+    if variance_explained is None:
+        variance_explained = fusion.metadata.get("variance_explained")
+    if isinstance(variance_explained, list):
+        variance_explained = float(sum(variance_explained))
+
+    contributions = [
+        OmicsContribution(
+            dataset_id=by_key[key].id,
+            dataset_name=by_key[key].name,
+            omics_type=getattr(by_key[key].omics_type, "value", str(by_key[key].omics_type)),
+            contribution=float(share),
+        )
+        for key, share in (fusion.omics_contributions or {}).items()
+    ]
+
+    embedding = [
+        IntegrationSamplePoint(
+            sample=sample,
+            x=float(fusion.fused_data[i, 0]),
+            y=float(fusion.fused_data[i, 1]) if fusion.fused_data.shape[1] > 1 else 0.0,
+            cluster=labels[i],
+        )
+        for i, sample in enumerate(fusion.sample_names)
+    ]
+
+    return OmicsIntegrationResponse(
+        method=fusion.method,
+        n_samples=int(fusion.fused_data.shape[0]),
+        n_features=total_features,
+        n_omics=len(omics_inputs),
+        variance_explained=variance_explained,
+        contribution_basis=str(fusion.metadata.get("contribution_basis", "unknown")),
+        contributions=contributions,
+        n_clusters=n_clusters,
+        embedding=embedding,
+    )

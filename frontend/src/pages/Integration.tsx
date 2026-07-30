@@ -1,81 +1,175 @@
 /**
  * Multi-Omics Integration Page
+ *
+ * Every figure on this page comes from POST /omics/integrate. Nothing is
+ * simulated: selecting fewer than two stored datasets, or datasets that share
+ * no samples, produces an error rather than a result.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import {
+  datasets as datasetsApi,
+  getApiErrorMessage,
+  omics as omicsApi,
+  projects as projectsApi,
+  type IntegrationResult,
+} from '../lib/api';
+import { useAuthStore } from '../stores/auth';
 
+/**
+ * Only methods the API implements. The list previously advertised six,
+ * including three that no endpoint backed; offering them here would produce a
+ * 400 the moment a user picked one.
+ */
 const integrationMethods = [
-  {
-    id: 'early_fusion',
-    name: 'Early Fusion',
-    description: 'Concatenate features from multiple omics datasets before analysis',
-    category: 'Data Fusion',
-  },
   {
     id: 'intermediate_fusion',
     name: 'Intermediate Fusion',
-    description: 'Joint dimensionality reduction of multiple omics datasets',
+    description: 'Joint dimensionality reduction across the selected datasets',
     category: 'Data Fusion',
   },
   {
-    id: 'late_fusion',
-    name: 'Late Fusion',
-    description: 'Combine predictions from individual omics models',
+    id: 'early_fusion',
+    name: 'Early Fusion',
+    description: 'Concatenate scaled features, then reduce jointly',
     category: 'Data Fusion',
   },
-  {
-    id: 'snf',
-    name: 'Similarity Network Fusion',
-    description: 'Fuse patient similarity networks from different omics',
-    category: 'Network-based',
-  },
-  {
-    id: 'network_integration',
-    name: 'Network Integration',
-    description: 'Build and integrate co-expression networks',
-    category: 'Network-based',
-  },
-  {
-    id: 'pathway_integration',
-    name: 'Pathway-level Integration',
-    description: 'Integrate data at the pathway/gene set level',
-    category: 'Pathway-based',
-  },
 ];
 
-const omicsTypes = [
-  { id: 'transcriptomics', name: 'Transcriptomics', color: 'bg-blue-500' },
-  { id: 'proteomics', name: 'Proteomics', color: 'bg-green-500' },
-  { id: 'metabolomics', name: 'Metabolomics', color: 'bg-purple-500' },
-  { id: 'genomics', name: 'Genomics', color: 'bg-red-500' },
-  { id: 'epigenomics', name: 'Epigenomics', color: 'bg-yellow-500' },
-  { id: 'lipidomics', name: 'Lipidomics', color: 'bg-pink-500' },
-];
-
-const BG_TO_FILL: Record<string, string> = {
-  'bg-blue-500': 'fill-blue-500',
-  'bg-green-500': 'fill-green-500',
-  'bg-purple-500': 'fill-purple-500',
-  'bg-red-500': 'fill-red-500',
-  'bg-yellow-500': 'fill-yellow-500',
-  'bg-pink-500': 'fill-pink-500',
+const OMICS_FILL: Record<string, string> = {
+  transcriptomics: 'fill-blue-500',
+  proteomics: 'fill-green-500',
+  metabolomics: 'fill-purple-500',
+  genomics: 'fill-red-500',
+  epigenomics: 'fill-yellow-500',
+  lipidomics: 'fill-pink-500',
 };
 
-export default function Integration() {
-  const [selectedOmics, setSelectedOmics] = useState<string[]>([]);
-  const [selectedMethod, setSelectedMethod] = useState('');
-  const [integrationStatus, setIntegrationStatus] = useState<'idle' | 'running' | 'complete'>('idle');
+const CLUSTER_FILL = [
+  'fill-blue-500',
+  'fill-green-500',
+  'fill-purple-500',
+  'fill-red-500',
+  'fill-yellow-500',
+  'fill-pink-500',
+  'fill-indigo-500',
+  'fill-teal-500',
+];
 
-  const toggleOmics = (omicsId: string) => {
-    setSelectedOmics((prev) =>
-      prev.includes(omicsId) ? prev.filter((id) => id !== omicsId) : [...prev, omicsId]
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+/** Scatter of the fused space, coloured by cluster assignment. */
+function EmbeddingPlot({ result }: { result: IntegrationResult }) {
+  const points = result.embedding;
+
+  const scaled = useMemo(() => {
+    if (points.length === 0) return [];
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    // Guard against a degenerate axis (all points identical on one axis).
+    const spanX = maxX - minX || 1;
+    const spanY = maxY - minY || 1;
+    return points.map((p) => ({
+      ...p,
+      cx: 5 + ((p.x - minX) / spanX) * 90,
+      cy: 95 - ((p.y - minY) / spanY) * 90,
+    }));
+  }, [points]);
+
+  if (scaled.length === 0) {
+    return (
+      <p className="text-sm text-gray-500">No samples were returned for this integration.</p>
     );
+  }
+
+  return (
+    <figure className="m-0">
+      <svg
+        viewBox="0 0 100 100"
+        className="block h-64 w-full rounded bg-gray-50"
+        role="img"
+        aria-label={`Fused sample space: ${scaled.length} samples in ${result.n_clusters} cluster${
+          result.n_clusters === 1 ? '' : 's'
+        }`}
+      >
+        {scaled.map((p) => (
+          <circle
+            key={p.sample}
+            cx={p.cx}
+            cy={p.cy}
+            r={1.4}
+            className={CLUSTER_FILL[p.cluster % CLUSTER_FILL.length]}
+            opacity={0.85}
+          >
+            <title>{`${p.sample} — cluster ${p.cluster + 1}`}</title>
+          </circle>
+        ))}
+      </svg>
+      <figcaption className="mt-2 text-xs text-gray-500">
+        First two components of the fused space. Colour indicates the cluster assigned by k-means,
+        with k chosen by silhouette score.
+      </figcaption>
+    </figure>
+  );
+}
+
+export default function Integration() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState('intermediate_fusion');
+  const [nComponents, setNComponents] = useState(10);
+  const [result, setResult] = useState<IntegrationResult | null>(null);
+
+  const { data: projectsData } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list({ page: 1, page_size: 100 }),
+    enabled: isAuthenticated,
+  });
+
+  const { data: datasetsData, isLoading: datasetsLoading } = useQuery({
+    queryKey: ['datasets', selectedProjectId],
+    queryFn: () =>
+      datasetsApi.list({ project_id: selectedProjectId, page: 1, page_size: 100 }),
+    enabled: isAuthenticated && Boolean(selectedProjectId),
+  });
+
+  const availableDatasets = datasetsData?.items ?? [];
+
+  const integrateMutation = useMutation({
+    mutationFn: () =>
+      omicsApi.integrate({
+        project_id: selectedProjectId,
+        dataset_ids: selectedDatasetIds,
+        method: selectedMethod,
+        n_components: nComponents,
+      }),
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success(`Integrated ${data.n_samples} samples across ${data.n_omics} datasets`);
+    },
+    onError: (err: unknown) => {
+      setResult(null);
+      toast.error(getApiErrorMessage(err));
+    },
+  });
+
+  const toggleDataset = (datasetId: string) => {
+    setSelectedDatasetIds((prev) =>
+      prev.includes(datasetId) ? prev.filter((id) => id !== datasetId) : [...prev, datasetId]
+    );
+    setResult(null);
   };
 
-  const handleRunIntegration = () => {
-    setIntegrationStatus('running');
-    setTimeout(() => setIntegrationStatus('complete'), 3000);
-  };
+  const canRun = selectedDatasetIds.length >= 2 && Boolean(selectedMethod);
 
   return (
     <div className="space-y-6">
@@ -87,253 +181,243 @@ export default function Integration() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Dataset Selection */}
+        {/* Dataset selection */}
+        <div className="lg:col-span-2 bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Datasets</h2>
+
+          <div className="mb-4">
+            <label htmlFor="project" className="block text-sm font-medium text-gray-700 mb-1">
+              Project
+            </label>
+            <select
+              id="project"
+              className="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+              value={selectedProjectId}
+              onChange={(e) => {
+                setSelectedProjectId(e.target.value);
+                setSelectedDatasetIds([]);
+                setResult(null);
+              }}
+            >
+              <option value="">Select a project…</option>
+              {(projectsData?.items ?? []).map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!selectedProjectId && (
+            <p className="text-sm text-gray-500">Choose a project to list its datasets.</p>
+          )}
+
+          {selectedProjectId && datasetsLoading && (
+            <p className="text-sm text-gray-500">Loading datasets…</p>
+          )}
+
+          {selectedProjectId && !datasetsLoading && availableDatasets.length === 0 && (
+            <p className="text-sm text-gray-500">
+              This project has no datasets yet. Upload at least two to integrate.
+            </p>
+          )}
+
+          {availableDatasets.length > 0 && (
+            <fieldset>
+              <legend className="text-sm font-medium text-gray-700 mb-2">
+                Select at least two datasets
+              </legend>
+              <div className="space-y-2">
+                {availableDatasets.map((dataset) => (
+                  <label
+                    key={dataset.id}
+                    className="flex items-center gap-3 rounded-md border border-gray-200 p-3 hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={selectedDatasetIds.includes(dataset.id)}
+                      onChange={() => toggleDataset(dataset.id)}
+                    />
+                    <span className="flex-1 text-sm text-gray-900">{dataset.name}</span>
+                    <span className="text-xs text-gray-500">{dataset.omics_type}</span>
+                    <span className="text-xs text-gray-400">
+                      {dataset.sample_count ?? '—'} samples · {dataset.feature_count ?? '—'} features
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
+        </div>
+
+        {/* Method */}
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Select Omics Datasets</h2>
-          
-          <div className="space-y-3">
-            {omicsTypes.map((omics) => (
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Method</h2>
+
+          <fieldset className="space-y-2">
+            <legend className="sr-only">Integration method</legend>
+            {integrationMethods.map((method) => (
               <label
-                key={omics.id}
-                className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${
-                  selectedOmics.includes(omics.id)
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                key={method.id}
+                className="flex items-start gap-3 rounded-md border border-gray-200 p-3 hover:bg-gray-50"
               >
                 <input
-                  type="checkbox"
-                  checked={selectedOmics.includes(omics.id)}
-                  onChange={() => toggleOmics(omics.id)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 rounded"
+                  type="radio"
+                  name="method"
+                  className="mt-1 h-4 w-4 border-gray-300"
+                  value={method.id}
+                  checked={selectedMethod === method.id}
+                  onChange={() => {
+                    setSelectedMethod(method.id);
+                    setResult(null);
+                  }}
                 />
-                <div className="ml-3 flex items-center">
-                  <span className={`w-3 h-3 rounded-full ${omics.color} mr-2`}></span>
-                  <span className="text-sm font-medium text-gray-900">{omics.name}</span>
-                </div>
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">{method.name}</span>
+                  <span className="block text-xs text-gray-500">{method.description}</span>
+                </span>
               </label>
             ))}
-          </div>
+          </fieldset>
 
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-sm text-gray-500">
-              {selectedOmics.length} dataset{selectedOmics.length !== 1 ? 's' : ''} selected
+          <div className="mt-4">
+            <label htmlFor="components" className="block text-sm font-medium text-gray-700 mb-1">
+              Components retained
+            </label>
+            <input
+              id="components"
+              type="number"
+              min={2}
+              max={100}
+              value={nComponents}
+              onChange={(e) => {
+                setNComponents(Number(e.target.value));
+                setResult(null);
+              }}
+              className="block w-full rounded-md border-gray-300 shadow-sm text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Contributions are shares of the variance these components retain, so this choice
+              affects them.
             </p>
           </div>
-        </div>
 
-        {/* Integration Method */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Integration Method</h2>
-          
-          <div className="space-y-3">
-            {['Data Fusion', 'Network-based', 'Pathway-based'].map((category) => (
-              <div key={category}>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  {category}
-                </p>
-                {integrationMethods
-                  .filter((m) => m.category === category)
-                  .map((method) => (
-                    <label
-                      key={method.id}
-                      className={`block p-3 border rounded-lg cursor-pointer transition-all mb-2 ${
-                        selectedMethod === method.id
-                          ? 'border-indigo-500 bg-indigo-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-start">
-                        <input
-                          type="radio"
-                          name="method"
-                          value={method.id}
-                          checked={selectedMethod === method.id}
-                          onChange={(e) => setSelectedMethod(e.target.value)}
-                          className="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <div className="ml-3">
-                          <p className="text-sm font-medium text-gray-900">{method.name}</p>
-                          <p className="text-xs text-gray-500">{method.description}</p>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-              </div>
-            ))}
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => integrateMutation.mutate()}
+            disabled={!canRun || integrateMutation.isPending}
+            className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:bg-gray-300"
+          >
+            {integrateMutation.isPending ? 'Integrating…' : 'Run Integration'}
+          </button>
 
-        {/* Parameters & Run */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Parameters</h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="num-components" className="block text-sm font-medium text-gray-700">
-                Number of Components
-              </label>
-              <input
-                id="num-components"
-                type="number"
-                defaultValue={10}
-                min={2}
-                max={100}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              />
-            </div>
+          {!canRun && (
+            <p className="mt-2 text-xs text-gray-500">Select two or more datasets to run.</p>
+          )}
 
-            <div>
-              <label htmlFor="scaling-method" className="block text-sm font-medium text-gray-700">
-                Scaling Method
-              </label>
-              <select id="scaling-method" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                <option value="standard">Standard Scaling</option>
-                <option value="minmax">Min-Max Scaling</option>
-                <option value="robust">Robust Scaling</option>
-              </select>
-            </div>
-
-            {selectedMethod === 'snf' && (
-              <>
-                <div>
-                  <label htmlFor="num-neighbors" className="block text-sm font-medium text-gray-700">
-                    Number of Neighbors (K)
-                  </label>
-                  <input
-                    id="num-neighbors"
-                    type="number"
-                    defaultValue={20}
-                    min={5}
-                    max={50}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="iterations" className="block text-sm font-medium text-gray-700">
-                    Iterations
-                  </label>
-                  <input
-                    id="iterations"
-                    type="number"
-                    defaultValue={20}
-                    min={5}
-                    max={100}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
-                </div>
-              </>
-            )}
-
-            <button
-              onClick={handleRunIntegration}
-              disabled={selectedOmics.length < 2 || !selectedMethod || integrationStatus === 'running'}
-              className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {integrationStatus === 'running' ? 'Integrating...' : 'Run Integration'}
-            </button>
-
-            {integrationStatus === 'running' && (
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <div className="flex items-center">
-                  <svg className="animate-spin h-5 w-5 text-blue-600 mr-2" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                  </svg>
-                  <span className="text-sm text-blue-700">Running integration...</span>
-                </div>
-              </div>
-            )}
-          </div>
+          {integrateMutation.isError && (
+            <p className="mt-3 text-sm text-red-700" role="alert">
+              {getApiErrorMessage(integrateMutation.error)}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Results Section */}
-      {integrationStatus === 'complete' && (
+      {/* Results */}
+      {result && (
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Integration Results</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Integrated View */}
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-900 mb-4">Sample Clustering</h3>
-              <div className="h-64 bg-gray-100 rounded flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  <span className="text-sm text-gray-500">t-SNE/UMAP visualization</span>
-                </div>
-              </div>
+              <EmbeddingPlot result={result} />
             </div>
 
-            {/* Feature Contributions */}
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-900 mb-4">Omics Contributions</h3>
               <div className="space-y-3">
-                {selectedOmics.map((omicsId) => {
-                  const omics = omicsTypes.find((o) => o.id === omicsId);
-                  // PLACEHOLDER, NOT A COMPUTED RESULT. This page performs no
-                  // integration: handleRunIntegration only waits 3s before
-                  // flipping to 'complete', and nothing here calls the API. The
-                  // percentage below is a random number and changes on every
-                  // re-render. It must be replaced with a real contribution
-                  // from the integration endpoint before this screen is used to
-                  // interpret data.
-                  // eslint-disable-next-line react-hooks/purity -- see above
-                  const contribution = Math.random() * 40 + 10;
-                  return (
-                    <div key={omicsId}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-700">{omics?.name}</span>
-                        <span className="text-gray-900 font-medium">{contribution.toFixed(1)}%</span>
-                      </div>
-                      {/* Visual progress bar - percentage is already conveyed in text above */}
-                      <div className="w-full bg-gray-200 rounded-full h-2" aria-hidden="true">
-                        <svg
-                          className="block h-2 w-full text-gray-200"
-                          viewBox="0 0 100 1"
-                          preserveAspectRatio="none"
-                          role="presentation"
-                        >
-                          <rect
-                            x="0"
-                            y="0"
-                            width={Math.min(100, Math.max(0, contribution))}
-                            height="1"
-                            className={omics?.color ? BG_TO_FILL[omics.color] ?? 'fill-gray-500' : 'fill-gray-500'}
-                          />
-                        </svg>
-                      </div>
+                {result.contributions.map((entry) => (
+                  <div key={entry.dataset_id}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-700">
+                        {entry.dataset_name}
+                        <span className="ml-2 text-xs text-gray-400">{entry.omics_type}</span>
+                      </span>
+                      <span className="text-gray-900 font-medium">
+                        {formatPercent(entry.contribution)}
+                      </span>
                     </div>
-                  );
-                })}
+                    {/* Bar mirrors the percentage already given in text above. */}
+                    <div className="w-full bg-gray-200 rounded-full h-2" aria-hidden="true">
+                      <svg
+                        className="block h-2 w-full"
+                        viewBox="0 0 100 1"
+                        preserveAspectRatio="none"
+                        role="presentation"
+                      >
+                        <rect
+                          x="0"
+                          y="0"
+                          width={Math.min(100, Math.max(0, entry.contribution * 100))}
+                          height="1"
+                          className={OMICS_FILL[entry.omics_type] ?? 'fill-gray-500'}
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              {result.contribution_basis !== 'pca_loadings' && (
+                <p className="mt-4 text-xs text-amber-700" role="note">
+                  These shares reflect each dataset&apos;s portion of the scaled feature budget, not
+                  how much signal it carries. Retain components to get a variance-based attribution.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-4 bg-green-50 rounded-lg">
               <p className="text-xs text-green-600 font-medium uppercase">Samples Integrated</p>
-              <p className="text-2xl font-semibold text-green-900">256</p>
+              <p className="text-2xl font-semibold text-green-900">{result.n_samples}</p>
+              <p className="mt-1 text-xs text-green-700">Shared across all selected datasets</p>
             </div>
             <div className="p-4 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-600 font-medium uppercase">Features Used</p>
-              <p className="text-2xl font-semibold text-blue-900">12,458</p>
+              <p className="text-2xl font-semibold text-blue-900">
+                {result.n_features.toLocaleString()}
+              </p>
             </div>
             <div className="p-4 bg-purple-50 rounded-lg">
               <p className="text-xs text-purple-600 font-medium uppercase">Variance Explained</p>
-              <p className="text-2xl font-semibold text-purple-900">78.4%</p>
+              <p className="text-2xl font-semibold text-purple-900">
+                {result.variance_explained === null
+                  ? 'n/a'
+                  : formatPercent(result.variance_explained)}
+              </p>
             </div>
             <div className="p-4 bg-orange-50 rounded-lg">
               <p className="text-xs text-orange-600 font-medium uppercase">Clusters Found</p>
-              <p className="text-2xl font-semibold text-orange-900">4</p>
+              <p className="text-2xl font-semibold text-orange-900">{result.n_clusters}</p>
             </div>
           </div>
+
+          <p className="mt-4 text-xs text-gray-500">
+            Method: {result.method}. Contributions attributed by {result.contribution_basis}.
+          </p>
         </div>
       )}
 
-      {/* Biomarker Discovery */}
+      {/*
+        Biomarker Discovery is not implemented. The button has never had a
+        handler and the three selects have never had state, so the controls did
+        nothing when they appeared enabled. Kept, but disabled and labelled,
+        rather than removed: whether to build it or drop it is a product call,
+        and either way it should not look operable in the meantime.
+      */}
       <div className="bg-white shadow rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -342,40 +426,63 @@ export default function Integration() {
               Identify multi-omics biomarkers from integrated data
             </p>
           </div>
-          <button
-            disabled={integrationStatus !== 'complete'}
-            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:bg-gray-400"
-          >
-            Discover Biomarkers
-          </button>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+            Not yet available
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <p className="mb-4 text-sm text-gray-500">
+          This step is not wired to an endpoint yet, so the controls below are disabled.
+        </p>
+
+        <fieldset disabled className="grid grid-cols-1 md:grid-cols-3 gap-4 opacity-60">
+          <legend className="sr-only">Biomarker discovery options (unavailable)</legend>
           <div className="p-4 border border-gray-200 rounded-lg">
-            <label htmlFor="analysis-type" className="text-sm font-medium text-gray-900 mb-2 block">Analysis Type</label>
-            <select id="analysis-type" className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            <label htmlFor="analysis-type" className="text-sm font-medium text-gray-900 mb-2 block">
+              Analysis Type
+            </label>
+            <select
+              id="analysis-type"
+              className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
+            >
               <option>Differential Analysis</option>
               <option>Survival Analysis</option>
               <option>Classification</option>
             </select>
           </div>
           <div className="p-4 border border-gray-200 rounded-lg">
-            <label htmlFor="feature-selection" className="text-sm font-medium text-gray-900 mb-2 block">Feature Selection</label>
-            <select id="feature-selection" className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            <label
+              htmlFor="feature-selection"
+              className="text-sm font-medium text-gray-900 mb-2 block"
+            >
+              Feature Selection
+            </label>
+            <select
+              id="feature-selection"
+              className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
+            >
               <option>Stability Selection</option>
               <option>LASSO</option>
               <option>Random Forest</option>
             </select>
           </div>
           <div className="p-4 border border-gray-200 rounded-lg">
-            <label htmlFor="cross-validation" className="text-sm font-medium text-gray-900 mb-2 block">Cross-Validation</label>
-            <select id="cross-validation" className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            <label
+              htmlFor="cross-validation"
+              className="text-sm font-medium text-gray-900 mb-2 block"
+            >
+              Cross-Validation
+            </label>
+            <select
+              id="cross-validation"
+              className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"
+            >
               <option>5-Fold CV</option>
               <option>10-Fold CV</option>
               <option>Leave-One-Out</option>
             </select>
           </div>
-        </div>
+        </fieldset>
       </div>
     </div>
   );

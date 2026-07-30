@@ -45,6 +45,69 @@ class DataFusion(ABC):
         self.fit(datasets, **kwargs)
         return self.transform(datasets)
 
+    @staticmethod
+    def _variance_contributions(blocks: dict[str, np.ndarray]) -> dict[str, float]:
+        """Share of total variance carried by each omics block.
+
+        Each block is the matrix for one omics type. The share is that block's
+        summed feature variance over the total across blocks, so the values are
+        non-negative and sum to 1.
+
+        Note the limitation this carries, which is why callers record the basis
+        in ``metadata["contribution_basis"]``: if the blocks have been
+        standardised then every feature has unit variance and this reduces to
+        each block's share of the feature count, which says nothing about how
+        much signal a block carries. Only the PCA-loading attribution below is
+        informative in that case.
+        """
+        per_block = {
+            name: float(np.nansum(np.var(arr, axis=0, ddof=0))) for name, arr in blocks.items()
+        }
+        total = sum(per_block.values())
+        if total <= 0:
+            # Degenerate input (constant features): fall back to equal shares
+            # rather than dividing by zero.
+            n = len(per_block) or 1
+            # Immutable value, so fromkeys sharing it across keys is safe.
+            return dict.fromkeys(per_block, 1.0 / n)
+        return {name: value / total for name, value in per_block.items()}
+
+    @staticmethod
+    def _pca_block_contributions(pca: PCA, block_widths: dict[str, int]) -> dict[str, float]:
+        """Share of retained variance attributable to each omics block.
+
+        ``pca.components_`` is (n_components, n_features) with unit-norm rows, so
+        the squared loadings over one block's columns give that block's share of
+        a component. Weighting by ``explained_variance_ratio_`` and summing over
+        components attributes the retained variance across blocks; the result is
+        renormalised so the shares sum to 1.
+
+        Read this as a share of the *retained* variance, not as a free-standing
+        importance score. On the leading components a small, strongly-structured
+        block will outrank a large noisy one, which is the useful case. Retain
+        enough components and a wide block accumulates share simply because it
+        holds more total variance -- correct, but a different question. Callers
+        should surface the component count and the explained variance next to
+        these numbers so they are not over-read.
+        """
+        loadings = np.asarray(pca.components_) ** 2
+        weights = np.asarray(pca.explained_variance_ratio_)
+
+        contributions: dict[str, float] = {}
+        start = 0
+        for name, width in block_widths.items():
+            stop = start + width
+            # Per component, this block's share; weighted by that component's
+            # share of the retained variance.
+            contributions[name] = float(np.sum(loadings[:, start:stop].sum(axis=1) * weights))
+            start = stop
+
+        total = sum(contributions.values())
+        if total <= 0:
+            n = len(contributions) or 1
+            return dict.fromkeys(contributions, 1.0 / n)
+        return {name: value / total for name, value in contributions.items()}
+
     def _align_samples(self, datasets: dict[str, OmicsData]) -> dict[str, pd.DataFrame]:
         """Align samples across datasets."""
         # Find common samples
@@ -128,10 +191,26 @@ class EarlyFusion(DataFusion):
         for name, df in aligned.items():
             feature_names.extend([f"{name}_{f}" for f in df.columns])
 
+        # Attribute the fused signal back to each omics block. Computed before
+        # PCA rewrites the column space, so the block widths still line up with
+        # the concatenated matrix.
+        block_widths = {name: df.shape[1] for name, df in aligned.items()}
+        if self.pca:
+            contributions = self._pca_block_contributions(self.pca, block_widths)
+            contribution_basis = "pca_loadings"
+        else:
+            contributions = self._variance_contributions(
+                {name: df.values for name, df in aligned.items()}
+            )
+            # Degenerate when scaling is on: see _variance_contributions.
+            contribution_basis = "scaled_variance_share" if self.scale else "variance_share"
+
         # Apply PCA if fitted
+        variance_explained = None
         if self.pca:
             fused = self.pca.transform(fused)
             feature_names = [f"PC{i+1}" for i in range(fused.shape[1])]
+            variance_explained = float(np.sum(self.pca.explained_variance_ratio_))
 
         return FusionResult(
             fused_data=fused,
@@ -142,7 +221,10 @@ class EarlyFusion(DataFusion):
                 "n_omics": len(datasets),
                 "omics_types": list(datasets.keys()),
                 "dimensionality_reduced": self.pca is not None,
+                "variance_explained": variance_explained,
+                "contribution_basis": contribution_basis,
             },
+            omics_contributions=contributions,
         )
 
     def _concatenate(self, aligned: dict[str, pd.DataFrame], scale: bool = True) -> np.ndarray:
@@ -209,6 +291,24 @@ class IntermediateFusion(DataFusion):
         # Transform
         fused = self.model.transform(concatenated)
 
+        # Attribute the retained variance across the omics blocks. The blocks
+        # occupy contiguous column ranges of `concatenated` in `aligned` order.
+        block_widths = {name: df.shape[1] for name, df in aligned.items()}
+        if hasattr(self.model, "components_"):
+            contributions = self._pca_block_contributions(self.model, block_widths)
+            contribution_basis = "pca_loadings"
+        else:
+            contributions = self._variance_contributions(
+                {name: self.scalers[name].transform(df.values) for name, df in aligned.items()}
+            )
+            contribution_basis = "scaled_variance_share"
+
+        per_component = (
+            self.model.explained_variance_ratio_.tolist()
+            if hasattr(self.model, "explained_variance_ratio_")
+            else None
+        )
+
         return FusionResult(
             fused_data=fused,
             sample_names=sample_names,
@@ -216,12 +316,11 @@ class IntermediateFusion(DataFusion):
             method=f"intermediate_{self.method}",
             metadata={
                 "n_omics": len(datasets),
-                "variance_explained": (
-                    self.model.explained_variance_ratio_.tolist()
-                    if hasattr(self.model, "explained_variance_ratio_")
-                    else None
-                ),
+                "variance_explained": per_component,
+                "total_variance_explained": (float(sum(per_component)) if per_component else None),
+                "contribution_basis": contribution_basis,
             },
+            omics_contributions=contributions,
         )
 
 
