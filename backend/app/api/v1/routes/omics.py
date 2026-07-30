@@ -358,7 +358,11 @@ def _for_log(value: object, limit: int = 200) -> str:
     newlines and control characters are stripped before logging. Without that,
     a crafted identifier could inject additional log lines.
     """
-    text = str(value)
+    # The explicit newline replacement is deliberate and comes first: it is the
+    # form CodeQL's py/log-injection query recognises as a sanitiser, and it is
+    # what actually prevents a forged log line. The isprintable pass then takes
+    # care of the remaining control characters.
+    text = str(value).replace("\r", " ").replace("\n", " ")
     cleaned = "".join(ch if ch.isprintable() else " " for ch in text)
     if len(cleaned) > limit:
         cleaned = cleaned[: limit - 1] + "…"
@@ -503,7 +507,11 @@ async def integrate_omics(
         fusion = await run_in_threadpool(model.fit_transform, omics_inputs)
     except ValueError as exc:
         # _align_samples raises when the datasets share no sample identifiers.
-        logger.info("Integration rejected for project %s: %s", body.project_id, _for_log(exc))
+        logger.info(
+            "Integration rejected for project %s: %s",
+            _for_log(body.project_id),
+            _for_log(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
