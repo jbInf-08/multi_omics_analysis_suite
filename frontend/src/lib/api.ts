@@ -54,6 +54,41 @@ export interface DatasetSummary {
   created_at: string;
 }
 
+/** One omics block's share of the integrated signal. */
+export interface OmicsContribution {
+  dataset_id: string;
+  dataset_name: string;
+  omics_type: string;
+  /** Share of the integrated signal, 0-1. */
+  contribution: number;
+}
+
+/** A sample positioned in the first two dimensions of the fused space. */
+export interface IntegrationSamplePoint {
+  sample: string;
+  x: number;
+  y: number;
+  cluster: number;
+}
+
+export interface IntegrationResult {
+  method: string;
+  n_samples: number;
+  n_features: number;
+  n_omics: number;
+  /** Share of variance retained by the fused representation, 0-1. */
+  variance_explained: number | null;
+  /**
+   * How `contribution` was derived. `pca_loadings` attributes retained variance
+   * through component loadings. `scaled_variance_share` is only a feature-count
+   * proxy and must not be presented as a measure of signal.
+   */
+  contribution_basis: string;
+  contributions: OmicsContribution[];
+  n_clusters: number;
+  embedding: IntegrationSamplePoint[];
+}
+
 export interface Paginated<T> {
   items: T[];
   total: number;
@@ -206,6 +241,19 @@ export const datasets = {
     const { data } = await apiClient.post<unknown>(`/datasets/${datasetId}/upload`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return data;
+  },
+};
+
+export const omics = {
+  /** Run a multi-omics integration over stored datasets and return the result. */
+  async integrate(payload: {
+    project_id: string;
+    dataset_ids: string[];
+    method: string;
+    n_components?: number;
+  }): Promise<IntegrationResult> {
+    const { data } = await apiClient.post<IntegrationResult>('/omics/integrate', payload);
     return data;
   },
 };
