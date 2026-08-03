@@ -8,8 +8,26 @@
 import React, { type ErrorInfo } from 'react';
 import { ErrorBoundary as ReactErrorBoundary, FallbackProps } from 'react-error-boundary';
 
+/**
+ * react-error-boundary 6 types FallbackProps.error as `unknown` rather than
+ * `Error`, which is accurate -- `throw` accepts any value, so a rejected
+ * promise carrying a string or a plain object reaches a boundary just as an
+ * Error does. Narrow once here instead of asserting `as Error` at each use,
+ * so a thrown non-Error renders its value rather than `undefined`.
+ */
+function toError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (typeof error === 'string') return new Error(error);
+  try {
+    return new Error(JSON.stringify(error));
+  } catch {
+    return new Error(String(error));
+  }
+}
+
 // Error fallback component
 function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
+  const err = toError(error);
   return (
     <div className="min-h-[400px] flex items-center justify-center p-8">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
@@ -32,7 +50,7 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
           Something went wrong
         </h2>
         <p className="text-gray-600 mb-4">
-          {error.message || 'An unexpected error occurred'}
+          {err.message || 'An unexpected error occurred'}
         </p>
         <div className="space-y-2">
           <button
@@ -54,7 +72,7 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
               Error details
             </summary>
             <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-32">
-              {error.stack}
+              {err.stack}
             </pre>
           </details>
         )}
@@ -65,6 +83,7 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
 
 // Page-level error fallback
 function PageErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
+  const err = toError(error);
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-8">
       <div className="max-w-lg w-full bg-white rounded-lg shadow-xl p-8 text-center">
@@ -106,13 +125,13 @@ function PageErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
         {process.env.NODE_ENV === 'development' && (
           <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
             <p className="text-sm font-medium text-gray-700 mb-2">Error message:</p>
-            <p className="text-sm text-red-600">{error.message}</p>
+            <p className="text-sm text-red-600">{err.message}</p>
             <details className="mt-2">
               <summary className="text-sm text-gray-500 cursor-pointer">
                 Stack trace
               </summary>
               <pre className="mt-2 text-xs overflow-auto max-h-40 p-2 bg-white rounded">
-                {error.stack}
+                {err.stack}
               </pre>
             </details>
           </div>
@@ -123,7 +142,7 @@ function PageErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
 }
 
 // Error logging function
-function logError(error: Error, info: ErrorInfo) {
+function logError(error: unknown, info: ErrorInfo) {
   // Log to console in development
   console.error('Error caught by boundary:', error);
   console.error('Component stack:', info.componentStack);
