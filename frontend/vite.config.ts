@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      // import.meta.dirname, not __dirname: this config is ESM, and the
+      // native config loader Vite plans to make the default does not inject
+      // the CommonJS globals. Needs Node >= 20.11; CI and the image are on 22.
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {
