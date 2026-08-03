@@ -7,16 +7,12 @@
 
 import React from 'react';
 import {
-  useForm,
   FormProvider,
   useFormContext,
   UseFormReturn,
   FieldValues,
   SubmitHandler,
-  type DefaultValues,
 } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { ZodSchema } from 'zod';
 import clsx from 'clsx';
 
 // Form wrapper with context
@@ -42,17 +38,8 @@ export function Form<T extends FieldValues>({
   );
 }
 
-// Hook for creating forms with zod validation
-export function useZodForm<T extends FieldValues>(
-  schema: ZodSchema<T>,
-  defaultValues?: Partial<T>
-) {
-  return useForm<T>({
-    resolver: zodResolver(schema),
-    defaultValues: defaultValues as DefaultValues<T> | undefined,
-    mode: 'onBlur',
-  });
-}
+// useZodForm lives in ./useZodForm so this module exports only components --
+// see the note there.
 
 // Form field wrapper
 interface FormFieldProps {

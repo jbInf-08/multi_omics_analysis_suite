@@ -12,8 +12,8 @@ export { default as Layout } from './Layout';
 export {
   ErrorBoundary,
   PageErrorBoundary,
-  withErrorBoundary,
 } from './ErrorBoundary';
+export { withErrorBoundary } from './withErrorBoundary';
 
 // Loading states
 export {
@@ -41,8 +41,8 @@ export {
   MultiSelect,
   FileInput,
   SubmitButton,
-  useZodForm,
 } from './Form';
+export { useZodForm } from './useZodForm';
 
 // UI Components
 export {
