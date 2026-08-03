@@ -171,18 +171,7 @@ export function PageErrorBoundary({ children }: { children: React.ReactNode }) {
   );
 }
 
-// HOC for wrapping components with error boundary
-export function withErrorBoundary<P extends object>(
-  Component: React.ComponentType<P>,
-  fallback?: React.ComponentType<FallbackProps>
-) {
-  return function WrappedComponent(props: P) {
-    return (
-      <ErrorBoundary fallback={fallback}>
-        <Component {...props} />
-      </ErrorBoundary>
-    );
-  };
-}
+// withErrorBoundary lives in ./withErrorBoundary so this module exports only
+// components -- see the note there.
 
 export default ErrorBoundary;

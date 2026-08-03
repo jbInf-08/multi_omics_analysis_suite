@@ -87,6 +87,19 @@ export default function MLDashboard() {
     refetchInterval: 2000,
   });
 
+  // This effect is the terminal transition of a polling state machine:
+  // trainingStatus and taskId gate the query above (`enabled`), and clearing
+  // taskId here is what stops the 2s poll once the task reaches a final state.
+  //
+  // react-hooks/set-state-in-effect is disabled deliberately rather than
+  // silenced. Deriving trainingStatus instead would mean keeping taskId set
+  // after completion so 'complete' survives, which moves the poll-stop
+  // condition and changes when a subsequent run resets -- a behavioural change
+  // to async orchestration that cannot be validated without a live task
+  // backend. The warning is about cascading renders, and this effect runs at
+  // most once per training run. Revisit alongside a test that can drive a task
+  // through SUCCESS and FAILURE.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (taskStatus?.ready && taskStatus?.status === 'SUCCESS') {
       setTrainingStatus('complete');
@@ -98,6 +111,7 @@ export default function MLDashboard() {
       toast.error(taskStatus?.error ?? 'Training failed');
     }
   }, [taskStatus]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const datasets = datasetsData?.items ?? [];
   const handleTrainModel = () => {
