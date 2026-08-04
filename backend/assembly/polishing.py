@@ -402,14 +402,13 @@ class HomopolymerCorrector:
         result = list(sequence)
 
         for start, end, base, true_length in corrections:
-            current_length = end - start
-
-            if true_length > current_length:
-                # Insert bases
-                result[start:end] = [base] * true_length
-            else:
-                # Remove bases
-                result[start:end] = [base] * true_length
+            # One assignment covers both directions: a list slice takes the
+            # length of whatever replaces it, so this grows the homopolymer
+            # when true_length exceeds the observed run and shrinks it when it
+            # does not. The branch this replaces ran the identical statement
+            # in each arm, under comments reading "Insert bases" and "Remove
+            # bases" -- which read as a bug but was only redundant.
+            result[start:end] = [base] * true_length
 
         return "".join(result)
 
