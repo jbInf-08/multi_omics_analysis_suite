@@ -34,7 +34,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pydantic pydantic-settings
-          pip install ruff mypy black
+          # Pinned. These were unpinned, so a release of any of them could turn
+          # this job red with no change to the repository -- and black's output
+          # differs between majors, which is exactly how a formatted-on-23.11
+          # file still failed a 26.x check here. Bump deliberately.
+          pip install ruff==0.16.1 mypy==2.3.0 black==26.5.1
 
       - name: Check formatting with Black
         run: black --check --diff .
@@ -228,7 +232,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install safety bandit
+          # Pinned for the same reason as the linters above.
+          pip install safety==3.8.1 bandit==1.9.4
 
       - name: Run Safety check
         run: safety check --full-report
