@@ -357,8 +357,6 @@ class Scaffolder:
                     # Find consistent chain
                     read_start = positions[0][0]
                     read_end = positions[-1][0] + k
-                    positions[0][1]
-                    positions[-1][1] + k
 
                     strand = "+"
                     read_alignments.append(
