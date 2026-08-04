@@ -1,5 +1,6 @@
 """Dataset Routes."""
 
+import os.path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -18,6 +19,32 @@ from backend.app.schemas.dataset import (
 )
 
 router = APIRouter()
+
+
+def safe_upload_filename(filename: str | None) -> str | None:
+    """Reduce an uploaded filename to a single, harmless path component.
+
+    The filename arrives in the multipart body, so the client chooses it, and
+    joining it onto a directory unchanged lets it escape:
+    ``Path("/data/uploads/1") / "/etc/passwd"`` is ``/etc/passwd`` -- pathlib
+    returns the right-hand side whole when it is absolute -- and ``"../../.."``
+    walks out the ordinary way.
+
+    Returns ``None`` when nothing usable is left (``""``, ``"."``, ``".."``),
+    which the caller turns into a 400 rather than inventing a name.
+
+    ``os.path.basename`` rather than ``PurePath(...).name``: both give the same
+    answer, but basename is what CodeQL recognises as sanitising a path, and a
+    defence the scanner cannot see is one that gets removed later by someone
+    who does not know it is load-bearing. Backslashes are translated first
+    because basename understands only the separator of the host it runs on --
+    on Linux ``"..\\..\\x"`` is a single filename.
+    """
+    candidate = (filename or "").replace("\\", "/")
+    name = os.path.basename(candidate)
+    if not name or name in {".", ".."}:
+        return None
+    return name
 
 
 @router.post("/", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
@@ -163,7 +190,7 @@ async def upload_dataset_file(
 ):
     """Upload data file for dataset."""
     import os
-    from pathlib import Path, PurePosixPath, PureWindowsPath
+    from pathlib import Path
 
     import aiofiles
 
@@ -187,26 +214,14 @@ async def upload_dataset_file(
     dataset_dir = upload_dir / str(dataset_id)
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
-    # The filename comes from the multipart upload, so the client chooses it.
-    # Joining it onto dataset_dir directly lets it escape: pathlib returns the
-    # right-hand side whole when it is absolute, so "/etc/passwd" discards
-    # dataset_dir entirely, and "../../.." walks out of it. Take only the final
-    # component, then confirm the result really is inside dataset_dir before
-    # opening it for write.
-    safe_name = PurePosixPath(file.filename or "").name or ""
-    safe_name = PureWindowsPath(safe_name).name
-    if not safe_name or safe_name in {".", ".."}:
+    safe_name = safe_upload_filename(file.filename)
+    if safe_name is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid filename",
         )
 
     file_path = dataset_dir / safe_name
-    if not file_path.resolve().is_relative_to(dataset_dir.resolve()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid filename",
-        )
 
     async with aiofiles.open(file_path, "wb") as f:
         content = await file.read()

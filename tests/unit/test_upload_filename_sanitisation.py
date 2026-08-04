@@ -17,25 +17,13 @@ it should fail here.
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 
 import pytest
 
+from backend.app.api.v1.routes.datasets import safe_upload_filename as sanitise
+
 BASE = Path("/data/uploads/0000-1111")
-
-
-def sanitise(filename: str | None) -> str | None:
-    """Mirror of the rule in routes/datasets.py: keep only a final component.
-
-    Both flavours are applied because a filename arrives as text from a client
-    that may be on either platform, and ``PurePosixPath`` does not treat a
-    backslash as a separator.
-    """
-    name = PurePosixPath(filename or "").name or ""
-    name = PureWindowsPath(name).name
-    if not name or name in {".", ".."}:
-        return None
-    return name
 
 
 @pytest.mark.parametrize(
