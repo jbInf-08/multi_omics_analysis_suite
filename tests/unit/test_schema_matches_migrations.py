@@ -47,6 +47,7 @@ fixed without updating the list.
 from __future__ import annotations
 
 import ast
+import contextlib
 import pathlib
 
 import pytest
@@ -153,22 +154,18 @@ def _migration_schema() -> dict[str, set[str]]:
                         and ast.unparse(arg.func).endswith("Column")
                         and arg.args
                     ):
-                        try:
+                        # A computed column name is not something to guess at;
+                        # every migration here passes a literal.
+                        with contextlib.suppress(ValueError):
                             cols.add(ast.literal_eval(arg.args[0]))
-                        except ValueError:
-                            pass
             elif func.endswith("add_column") and len(node.args) >= 2:
                 first = node.args[0]
                 col = node.args[1]
                 if not isinstance(first, ast.Constant):
                     continue
                 if isinstance(col, ast.Call) and col.args:
-                    try:
-                        tables.setdefault(first.value, set()).add(
-                            ast.literal_eval(col.args[0])
-                        )
-                    except ValueError:
-                        pass
+                    with contextlib.suppress(ValueError):
+                        tables.setdefault(first.value, set()).add(ast.literal_eval(col.args[0]))
     return tables
 
 
@@ -211,12 +208,12 @@ def test_column_drift_per_table(table):
     only_migrations = migration_cols - model_cols
     only_models = model_cols - migration_cols
 
-    assert only_migrations == EXPECTED_COLUMNS_ONLY_IN_MIGRATIONS.get(table, set()), (
-        f"{table}: columns in the migrations with no model attribute changed"
-    )
-    assert only_models == EXPECTED_COLUMNS_ONLY_IN_MODELS.get(table, set()), (
-        f"{table}: model attributes no migration creates changed"
-    )
+    assert only_migrations == EXPECTED_COLUMNS_ONLY_IN_MIGRATIONS.get(
+        table, set()
+    ), f"{table}: columns in the migrations with no model attribute changed"
+    assert only_models == EXPECTED_COLUMNS_ONLY_IN_MODELS.get(
+        table, set()
+    ), f"{table}: model attributes no migration creates changed"
 
 
 def test_users_table_is_fully_reconciled():
