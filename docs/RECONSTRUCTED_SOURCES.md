@@ -100,19 +100,72 @@ consistent with the migrations having fallen behind the original models rather
 than the reconstruction having invented them, but that is an inference, not a
 verified fact.
 
-### Resolving it
+### Which side is authoritative — settled
 
-Deciding which side is authoritative is the owner's call. Two coherent routes:
+**The models are.** Only `models/` was lost, so every consumer of it survived
+in the initial commit, and those consumers say what the original columns were.
 
-1. **Models are current.** Generate one reconciling migration
-   (`alembic revision --autogenerate` against a PostgreSQL instance — the
-   migrations use `ARRAY`, so SQLite cannot run them) and add a model for
-   `audit_logs`. Then `alembic upgrade head` and `create_all` agree.
-2. **Migrations are current.** Then the extra model columns describe fields the
-   original models did not have, and the routes using them need revisiting.
+`backend/app/api/v1/routes/datasets.py`, as committed in `3d4d7a9`, builds a
+dataset like this:
 
-Either way, the allowlists in the test shrink as tables are reconciled, and the
-test fails if anyone reconciles a table without updating them.
+```python
+dataset = Dataset(
+    name=..., description=...,
+    omics_type=OmicsType(dataset_data.omics_type),
+    data_format=..., source=..., source_id=...,
+    metadata=..., clinical_data=..., sample_metadata=...,
+    project_id=..., status=DatasetStatus.UPLOADING,
+)
+```
+
+Every one of those is a column the reconstruction has and the migration does
+not. Counting attribute access across the whole original backend:
+
+| accessed in original code | count | | absent from original code | count |
+|---|---|---|---|---|
+| `dataset.storage_path` | 15 | | `dataset.data_type` | **0** |
+| `dataset.data_format` | 5 | | `dataset.file_path` | **0** |
+| `dataset.omics_type` | 3 | | `dataset.file_format` | **0** |
+| `dataset.sample_count`, `qc_passed`, `feature_count`, `qc_metrics`, `normalization_method`, `preprocessing_applied`, `source` | 1–2 each | | `dataset.file_size` | **0** |
+
+The migration's four `datasets` columns are referenced by nothing. The same
+pattern holds elsewhere: `pipeline.default_parameters`, `pipeline.is_active`,
+`project.visibility`, `project.project_type`, `project.omics_types`,
+`analysis.current_step` and `analysis.total_steps` are all accessed by original
+code and all missing from the migrations.
+
+`pipeline_runs` settles the same way: `routes/pipelines.py` in the initial
+commit does `from backend.app.models.pipeline import Pipeline, PipelineRun,
+PipelineStatus`. The table is real; the migration for it was never written.
+
+`audit_logs` is **not drift at all**. `core/security_hardening.py` writes to it
+with raw SQL, and its own docstring says *"Persist to SQL when an
+`audit_logs`-compatible table exists (optional migration)"*. No ORM model was
+ever meant to map it, and that entry in the test should stay.
+
+The initial migration is stamped `Create Date: 2024-01-01 00:00:00`, against a
+codebase from 2026 — it describes an early schema that was never regenerated as
+the models grew.
+
+### The fix
+
+Regenerate the migrations from the models:
+
+```bash
+# needs a real PostgreSQL: the migrations use ARRAY, which SQLite cannot render
+alembic upgrade head
+alembic revision --autogenerate -m "reconcile schema with models"
+```
+
+Then `alembic upgrade head` and `create_all` produce the same schema, and the
+allowlists in `tests/unit/test_schema_matches_migrations.py` shrink to just
+`audit_logs`. The test fails if anyone reconciles a table without updating
+them.
+
+This was not done here because there is no PostgreSQL available in this
+environment, and hand-writing roughly forty column additions across five tables
+plus a new table, without being able to execute the result, would produce a
+migration nobody had run.
 
 ## frontend/src/lib/api.ts
 

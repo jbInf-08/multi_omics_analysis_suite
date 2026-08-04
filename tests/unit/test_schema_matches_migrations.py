@@ -19,10 +19,29 @@ but does not add columns to tables that already exist -- so ``datasets`` would
 have the migration's ``data_type``/``file_path`` while the code selects
 ``omics_type``/``storage_path``, and the query fails at runtime.
 
-Resolving that means deciding which side is authoritative, which is the
-owner's call and not something to guess at here. What this module does is stop
-the drift from growing: the differences are enumerated below, and the tests
-fail if a new one appears or a listed one is fixed without updating the list.
+**The models are the authoritative side.** That is not a guess: only
+``models/`` was lost, so every consumer of it survived in the initial commit
+and says what the original columns were. In that commit,
+``api/v1/routes/datasets.py`` constructs ``Dataset(omics_type=...,
+data_format=..., source=..., source_id=..., clinical_data=...,
+sample_metadata=..., status=...)``; across the original backend,
+``dataset.storage_path`` appears 15 times, ``dataset.data_format`` 5 and
+``dataset.omics_type`` 3, while ``dataset.data_type``, ``dataset.file_path``,
+``dataset.file_format`` and ``dataset.file_size`` -- the migration's names --
+appear zero times. The same holds for ``pipeline.default_parameters``,
+``project.visibility``, ``project.project_type`` and
+``analysis.current_step``. ``routes/pipelines.py`` imports ``PipelineRun``
+from the models in that same commit, so the missing ``pipeline_runs``
+migration is an omission rather than an invented table.
+
+So the fix is to regenerate the migrations from the models, not to change the
+models. That needs ``alembic revision --autogenerate`` against a real
+PostgreSQL -- the migrations use ARRAY columns, which SQLite cannot render --
+so it is left to a change that can run one.
+
+Until then this module stops the drift from growing: the differences are
+enumerated below, and the tests fail if a new one appears or a listed one is
+fixed without updating the list.
 """
 
 from __future__ import annotations
@@ -40,13 +59,16 @@ import backend.app.models  # noqa: F401  isort:skip
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 VERSIONS_DIR = REPO_ROOT / "alembic" / "versions"
 
-# Known, unresolved drift. Shrink these as the schemas are reconciled; do not
-# grow them without a reason recorded here.
-#
-# audit_logs: created by 20260423_1800_add_audit_logs, no model maps to it.
-# pipeline_runs: the model has no migration at all, so `alembic upgrade head`
-#   never creates it -- only create_all does.
+# audit_logs is deliberate, not drift. core/security_hardening.py writes to it
+# with raw SQL -- "Persist to SQL when an ``audit_logs``-compatible table
+# exists (optional migration)" -- and no ORM model was ever meant to map it.
+# This entry should stay.
 EXPECTED_TABLES_ONLY_IN_MIGRATIONS = {"audit_logs"}
+
+# pipeline_runs is a missing migration. routes/pipelines.py imported
+# PipelineRun from the models in the initial commit, so the table is real and
+# `alembic upgrade head` simply never creates it -- only create_all does.
+# This entry should go away once the migrations are regenerated.
 EXPECTED_TABLES_ONLY_IN_MODELS = {"pipeline_runs"}
 
 EXPECTED_COLUMNS_ONLY_IN_MIGRATIONS = {
