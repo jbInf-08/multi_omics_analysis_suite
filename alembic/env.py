@@ -11,13 +11,20 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Import all models to register them with Base.metadata.
+#
+# This import is what makes autogenerate work, and it was missing -- only the
+# comment above it survived. Without it Base.metadata is empty, so alembic
+# compares a populated database against nothing and emits a revision that
+# drops every table. The models package is the one `.gitignore`'s bare
+# `models/` rule had excluded, so the import failed and was dropped while the
+# comment stayed.
+import backend.app.models  # noqa: F401,E402  (registers the ORM tables)
 from alembic import context
 from backend.app.core.config import settings
 
 # Import models for autogenerate support
 from backend.app.core.database import Base
-
-# Import all models to register them with Base.metadata
 
 # this is the Alembic Config object
 config = context.config

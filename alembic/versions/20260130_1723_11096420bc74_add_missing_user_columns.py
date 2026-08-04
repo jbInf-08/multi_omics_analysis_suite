@@ -22,51 +22,40 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Add missing columns to users table."""
     # Add missing user columns
-    op.add_column(
-        "users", sa.Column("username", sa.String(length=100), nullable=True), schema="omics"
-    )
-    op.add_column(
-        "users", sa.Column("organization", sa.String(length=255), nullable=True), schema="omics"
-    )
-    op.add_column("users", sa.Column("bio", sa.Text(), nullable=True), schema="omics")
+    op.add_column("users", sa.Column("username", sa.String(length=100), nullable=True))
+    op.add_column("users", sa.Column("organization", sa.String(length=255), nullable=True))
+    op.add_column("users", sa.Column("bio", sa.Text(), nullable=True))
     op.add_column(
         "users",
         sa.Column("is_verified", sa.Boolean(), server_default="false", nullable=False),
-        schema="omics",
     )
-    op.add_column(
-        "users", sa.Column("roles", sa.JSON(), server_default="[]", nullable=False), schema="omics"
-    )
+    op.add_column("users", sa.Column("roles", sa.JSON(), server_default="[]", nullable=False))
     op.add_column(
         "users",
         sa.Column("permissions", sa.JSON(), server_default="[]", nullable=False),
-        schema="omics",
     )
     op.add_column(
         "users",
         sa.Column("settings", sa.JSON(), server_default="{}", nullable=False),
-        schema="omics",
     )
-    op.add_column(
-        "users", sa.Column("last_login", sa.DateTime(timezone=True), nullable=True), schema="omics"
-    )
+    op.add_column("users", sa.Column("last_login", sa.DateTime(timezone=True), nullable=True))
 
     # Update existing users - set username to email for existing records
-    op.execute("UPDATE omics.users SET username = email WHERE username IS NULL")
+    op.execute("UPDATE users SET username = email WHERE username IS NULL")
 
     # Make username not null and unique after backfilling
-    op.alter_column("users", "username", nullable=False, schema="omics")
-    op.create_index("ix_omics_users_username", "users", ["username"], unique=True, schema="omics")
+    op.alter_column("users", "username", nullable=False)
+    op.create_index("ix_omics_users_username", "users", ["username"], unique=True)
 
 
 def downgrade() -> None:
     """Remove added user columns."""
-    op.drop_index("ix_omics_users_username", table_name="users", schema="omics")
-    op.drop_column("users", "last_login", schema="omics")
-    op.drop_column("users", "settings", schema="omics")
-    op.drop_column("users", "permissions", schema="omics")
-    op.drop_column("users", "roles", schema="omics")
-    op.drop_column("users", "is_verified", schema="omics")
-    op.drop_column("users", "bio", schema="omics")
-    op.drop_column("users", "organization", schema="omics")
-    op.drop_column("users", "username", schema="omics")
+    op.drop_index("ix_omics_users_username", table_name="users")
+    op.drop_column("users", "last_login")
+    op.drop_column("users", "settings")
+    op.drop_column("users", "permissions")
+    op.drop_column("users", "roles")
+    op.drop_column("users", "is_verified")
+    op.drop_column("users", "bio")
+    op.drop_column("users", "organization")
+    op.drop_column("users", "username")
