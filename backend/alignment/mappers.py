@@ -579,14 +579,10 @@ class MiniMap2Aligner(Aligner):
             return None
 
         # Estimate alignment region
-        chain[0][0]
-        chain[-1][0] + self.k
         ref_start = chain[0][1]
         ref_end = chain[-1][1] + self.k
 
         # Extend to full query
-        len(query)
-
         ref_start = max(0, ref_start - chain[0][0])
         ref_end = min(len(self.reference), ref_end + (len(query) - chain[-1][0] - self.k))
 

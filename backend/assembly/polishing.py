@@ -406,7 +406,6 @@ class HomopolymerCorrector:
 
             if true_length > current_length:
                 # Insert bases
-                base * (true_length - current_length)
                 result[start:end] = [base] * true_length
             else:
                 # Remove bases
