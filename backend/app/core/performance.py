@@ -426,6 +426,8 @@ class MemoryManager:
 
             # Disable memory preallocation
             np.set_printoptions(threshold=100)
+        # Optional at runtime: the tuning is applied when the package is
+        # present and skipped when it is not. Nothing to handle.
         except ImportError:
             pass
 
@@ -436,6 +438,8 @@ class MemoryManager:
             import pandas as pd
 
             pd.options.mode.copy_on_write = True
+        # Optional at runtime: the tuning is applied when the package is
+        # present and skipped when it is not. Nothing to handle.
         except ImportError:
             pass
 

@@ -684,7 +684,8 @@ class BiomarkerDiscoveryPipeline:
                 try:
                     _, p_value = stats.ttest_ind(group1, group2)
                     candidate.p_value = float(p_value)
-                except:
+                except Exception:
+                    logger.debug("t-test failed; p-value defaulted to 1.0", exc_info=True)
                     candidate.p_value = 1.0
 
                 # Effect size (Cohen's d)
@@ -698,16 +699,16 @@ class BiomarkerDiscoveryPipeline:
                     )
                     if pooled_std > 0:
                         candidate.effect_size = float((group2.mean() - group1.mean()) / pooled_std)
-                except:
-                    pass
+                except Exception:
+                    logger.debug("effect size could not be computed", exc_info=True)
 
                 # Fold change (log2)
                 try:
                     mean1, mean2 = group1.mean(), group2.mean()
                     if mean1 > 0 and mean2 > 0:
                         candidate.fold_change = float(np.log2(mean2 / mean1))
-                except:
-                    pass
+                except Exception:
+                    logger.debug("fold change could not be computed", exc_info=True)
 
         return candidates
 

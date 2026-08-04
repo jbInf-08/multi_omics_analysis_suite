@@ -81,6 +81,8 @@ try:
             "InChI",
         ]
     )
+# Optional extra: these names are exported when the dependency is installed
+# and absent otherwise, which is what the __all__ additions above express.
 except ImportError:
     pass
 
@@ -100,6 +102,8 @@ try:
             "ADMETPredictor",
         ]
     )
+# Optional extra: these names are exported when the dependency is installed
+# and absent otherwise, which is what the __all__ additions above express.
 except ImportError:
     pass
 
@@ -117,5 +121,7 @@ try:
             "InteractionVisualizer",
         ]
     )
+# Optional extra: these names are exported when the dependency is installed
+# and absent otherwise, which is what the __all__ additions above express.
 except ImportError:
     pass

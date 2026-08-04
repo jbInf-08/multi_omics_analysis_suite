@@ -602,8 +602,8 @@ def run_prediction(
                 result["probabilities"] = probabilities.tolist()[:1000]
                 if hasattr(model, "classes_"):
                     result["classes"] = model.classes_.tolist()
-            except:
-                pass
+            except Exception:
+                logger.debug("prediction probabilities unavailable", exc_info=True)
 
         logger.info(f"Prediction completed: {len(predictions)} samples")
 
@@ -900,7 +900,10 @@ def generate_shap_explanations(
             # Tree explainer is faster for tree-based models
             try:
                 explainer = shap.TreeExplainer(model)
-            except:
+            except Exception:
+                logger.debug(
+                    "TreeExplainer unavailable; falling back to KernelExplainer", exc_info=True
+                )
                 explainer = shap.KernelExplainer(model.predict, background)
         else:
             # Kernel explainer for other models

@@ -1,5 +1,6 @@
 """Model Training Pipeline."""
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,6 +23,8 @@ from sklearn.model_selection import (
 )
 
 from backend.ml.models.base import BaseModel, ModelMetrics
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -214,8 +217,8 @@ class ModelTrainer:
                     metrics["auc_pr"] = average_precision_score(y_true, y_proba[:, 1])
                 else:
                     metrics["auc_roc"] = roc_auc_score(y_true, y_proba, multi_class="ovr")
-            except:
-                pass
+            except Exception:
+                logger.debug("optional metric could not be computed", exc_info=True)
 
         return metrics
 
