@@ -233,7 +233,12 @@ class GraphFeatureExtractor:
                 betweenness_vec = np.array([betweenness.get(i, 0) for i in range(num_nodes)])
                 features.append(betweenness_vec.reshape(-1, 1))
                 names.append("graph_betweenness")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_betweenness",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_betweenness")
 
@@ -243,7 +248,12 @@ class GraphFeatureExtractor:
                 closeness_vec = np.array([closeness.get(i, 0) for i in range(num_nodes)])
                 features.append(closeness_vec.reshape(-1, 1))
                 names.append("graph_closeness")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_closeness",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_closeness")
 
@@ -253,7 +263,12 @@ class GraphFeatureExtractor:
                 eigenvector_vec = np.array([eigenvector.get(i, 0) for i in range(num_nodes)])
                 features.append(eigenvector_vec.reshape(-1, 1))
                 names.append("graph_eigenvector")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_eigenvector",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_eigenvector")
 
@@ -263,7 +278,12 @@ class GraphFeatureExtractor:
                 pagerank_vec = np.array([pagerank.get(i, 0) for i in range(num_nodes)])
                 features.append(pagerank_vec.reshape(-1, 1))
                 names.append("graph_pagerank")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_pagerank",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_pagerank")
 
@@ -273,7 +293,12 @@ class GraphFeatureExtractor:
                 clustering_vec = np.array([clustering.get(i, 0) for i in range(num_nodes)])
                 features.append(clustering_vec.reshape(-1, 1))
                 names.append("graph_clustering")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_clustering",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_clustering")
 
@@ -286,7 +311,12 @@ class GraphFeatureExtractor:
                 names.append("graph_hub")
                 features.append(auth_vec.reshape(-1, 1))
                 names.append("graph_authority")
-            except:
+            except Exception:
+                logger.debug(
+                    "%s could not be computed; substituting zeros to keep the feature matrix aligned",
+                    "graph_hub",
+                    exc_info=True,
+                )
                 features.append(np.zeros((num_nodes, 1)))
                 names.append("graph_hub")
                 features.append(np.zeros((num_nodes, 1)))

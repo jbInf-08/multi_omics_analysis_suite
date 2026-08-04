@@ -583,7 +583,8 @@ class StatisticalAnalysisPipeline:
         try:
             _, normality_p = shapiro(sample[:5000])
             is_normal = normality_p > self.normality_alpha
-        except:
+        except Exception:
+            logger.debug("Shapiro-Wilk failed; assuming non-normal", exc_info=True)
             is_normal = False
 
         # Select test based on number of groups and normality
@@ -594,7 +595,8 @@ class StatisticalAnalysisPipeline:
             try:
                 _, var_p = levene(g1[:1000], g2[:1000])
                 equal_var = var_p > 0.05
-            except:
+            except Exception:
+                logger.debug("Levene test failed; assuming equal variance", exc_info=True)
                 equal_var = True
 
             if is_normal:

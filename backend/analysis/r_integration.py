@@ -159,7 +159,12 @@ class RIntegrationManager:
         try:
             result = ro.r(f'requireNamespace("{package}", quietly = TRUE)')
             return bool(result[0])
-        except:
+        except Exception:
+            logger.debug(
+                "R package availability check failed for %r; treating as absent",
+                package,
+                exc_info=True,
+            )
             return False
 
     def df_to_r(self, df: pd.DataFrame) -> Any:
