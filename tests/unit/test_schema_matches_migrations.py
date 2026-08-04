@@ -6,42 +6,42 @@ The migrations in ``alembic/versions/`` were, from the initial commit onward,
 which makes them an independent record of the schema and the only way to check
 that reconstruction against something other than itself.
 
-They do not currently agree, and nothing in the project noticed:
+They disagreed badly, and nothing in the project noticed:
 
 * ``backend.app.core.database.init_db`` builds the schema with
   ``Base.metadata.create_all``, so the application and the tests get whatever
   the models say and never consult a migration.
 * No workflow runs ``alembic upgrade``.
 
-That matters because README documents ``alembic upgrade head`` as the setup
-step. On a database built that way, ``create_all`` adds tables that are missing
-but does not add columns to tables that already exist -- so ``datasets`` would
-have the migration's ``data_type``/``file_path`` while the code selects
-``omics_type``/``storage_path``, and the query fails at runtime.
+That mattered because README documents ``alembic upgrade head`` as the setup
+step, and ``create_all`` adds tables that are missing but does not add columns
+to tables that already exist. A database built the documented way ended up with
+the migration's ``datasets.data_type``/``file_path`` while the code selected
+``omics_type``/``storage_path``, and the query failed at runtime.
 
-**The models are the authoritative side.** That is not a guess: only
-``models/`` was lost, so every consumer of it survived in the initial commit
-and says what the original columns were. In that commit,
-``api/v1/routes/datasets.py`` constructs ``Dataset(omics_type=...,
-data_format=..., source=..., source_id=..., clinical_data=...,
-sample_metadata=..., status=...)``; across the original backend,
-``dataset.storage_path`` appears 15 times, ``dataset.data_format`` 5 and
-``dataset.omics_type`` 3, while ``dataset.data_type``, ``dataset.file_path``,
-``dataset.file_format`` and ``dataset.file_size`` -- the migration's names --
-appear zero times. The same holds for ``pipeline.default_parameters``,
-``project.visibility``, ``project.project_type`` and
-``analysis.current_step``. ``routes/pipelines.py`` imports ``PipelineRun``
-from the models in that same commit, so the missing ``pipeline_runs``
-migration is an omission rather than an invented table.
+**The models were the authoritative side.** Only ``models/`` was lost, so every
+consumer of it survived in the initial commit and says what the original
+columns were. There, ``api/v1/routes/datasets.py`` constructs
+``Dataset(omics_type=..., data_format=..., source=..., source_id=...,
+clinical_data=..., sample_metadata=..., status=...)``; across the original
+backend ``dataset.storage_path`` appears 15 times, ``dataset.data_format`` 5
+and ``dataset.omics_type`` 3, while the migration's ``data_type``,
+``file_path``, ``file_format`` and ``file_size`` appear zero times.
+``routes/pipelines.py`` imports ``PipelineRun`` in that same commit, so the
+missing ``pipeline_runs`` migration was an omission, not an invented table.
 
-So the fix is to regenerate the migrations from the models, not to change the
-models. That needs ``alembic revision --autogenerate`` against a real
-PostgreSQL -- the migrations use ARRAY columns, which SQLite cannot render --
-so it is left to a change that can run one.
+The ``reconcile schema with models`` revision closes that gap: it was generated
+by ``alembic revision --autogenerate`` against a real PostgreSQL, and a second
+autogenerate afterwards reports no added columns and no type changes.
 
-Until then this module stops the drift from growing: the differences are
-enumerated below, and the tests fail if a new one appears or a listed one is
-fixed without updating the list.
+What remains is deliberate and listed below -- ``audit_logs``, which is written
+by raw SQL and was never meant to have a model, and four legacy ``datasets``
+columns plus ``analysis_results.metadata`` that no code reads. Those were left
+in place rather than dropped, so the revision cannot lose data on a database
+that already has them.
+
+The tests fail if a new difference appears or a listed one is resolved without
+updating the list.
 """
 
 from __future__ import annotations
@@ -66,66 +66,19 @@ VERSIONS_DIR = REPO_ROOT / "alembic" / "versions"
 # This entry should stay.
 EXPECTED_TABLES_ONLY_IN_MIGRATIONS = {"audit_logs"}
 
-# pipeline_runs is a missing migration. routes/pipelines.py imported
-# PipelineRun from the models in the initial commit, so the table is real and
-# `alembic upgrade head` simply never creates it -- only create_all does.
-# This entry should go away once the migrations are regenerated.
-EXPECTED_TABLES_ONLY_IN_MODELS = {"pipeline_runs"}
+# Empty, and it should stay that way: every model table now has a migration
+# that creates it. pipeline_runs used to be here.
+EXPECTED_TABLES_ONLY_IN_MODELS: set[str] = set()
 
 EXPECTED_COLUMNS_ONLY_IN_MIGRATIONS = {
     "analysis_results": {"metadata"},
     "datasets": {"data_type", "file_format", "file_path", "file_size"},
 }
 
-EXPECTED_COLUMNS_ONLY_IN_MODELS = {
-    "analyses": {"current_step", "total_steps"},
-    "analysis_results": {
-        "description",
-        "file_size",
-        "file_type",
-        "metrics",
-        "name",
-        "summary",
-    },
-    "datasets": {
-        "clinical_data",
-        "data_format",
-        "feature_count",
-        "normalization_method",
-        "omics_type",
-        "preprocessing_applied",
-        "qc_metrics",
-        "qc_passed",
-        "sample_count",
-        "sample_metadata",
-        "source",
-        "source_id",
-        "status",
-        "storage_path",
-        "storage_type",
-        "total_size",
-    },
-    "pipelines": {
-        "author",
-        "default_parameters",
-        "is_active",
-        "is_public",
-        "max_retries",
-        "omics_types",
-        "tags",
-        "timeout_seconds",
-        "version",
-    },
-    "projects": {
-        "collaborators",
-        "config",
-        "metadata",
-        "omics_types",
-        "project_type",
-        "status",
-        "visibility",
-    },
-}
+# Empty, and it should stay that way: the reconcile revision adds every column
+# the models declare. Anything appearing here again means a model gained a
+# column without a migration.
+EXPECTED_COLUMNS_ONLY_IN_MODELS: dict[str, set[str]] = {}
 
 
 def _migration_schema() -> dict[str, set[str]]:

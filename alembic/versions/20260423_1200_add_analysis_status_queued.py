@@ -21,9 +21,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add ``queued`` to PostgreSQL ``analysisstatus`` enum (requires autocommit)."""
+    """Add ``queued`` to the ``analysisstatus`` enum, if one exists.
+
+    The existence check is not defensive padding -- without it this revision
+    aborts ``alembic upgrade head`` on every database this project creates.
+    Revision 001 makes ``analyses.status`` a ``VARCHAR(50)``, and the model
+    backs it with ``SAEnum(..., native_enum=False)``, so no ``analysisstatus``
+    type is ever created and ``ALTER TYPE`` has nothing to alter. The statement
+    is kept for databases that were built with a native enum by some other
+    route.
+    """
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
+        return
+    exists = bind.execute(
+        sa.text("SELECT 1 FROM pg_type WHERE typname = 'analysisstatus'")
+    ).scalar()
+    if not exists:
         return
     with op.get_context().autocommit_block():
         op.execute(sa.text("ALTER TYPE analysisstatus ADD VALUE IF NOT EXISTS 'queued'"))
