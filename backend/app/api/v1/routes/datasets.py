@@ -163,7 +163,7 @@ async def upload_dataset_file(
 ):
     """Upload data file for dataset."""
     import os
-    from pathlib import Path
+    from pathlib import Path, PurePosixPath, PureWindowsPath
 
     import aiofiles
 
@@ -187,15 +187,33 @@ async def upload_dataset_file(
     dataset_dir = upload_dir / str(dataset_id)
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save file
-    file_path = dataset_dir / file.filename
+    # The filename comes from the multipart upload, so the client chooses it.
+    # Joining it onto dataset_dir directly lets it escape: pathlib returns the
+    # right-hand side whole when it is absolute, so "/etc/passwd" discards
+    # dataset_dir entirely, and "../../.." walks out of it. Take only the final
+    # component, then confirm the result really is inside dataset_dir before
+    # opening it for write.
+    safe_name = PurePosixPath(file.filename or "").name or ""
+    safe_name = PureWindowsPath(safe_name).name
+    if not safe_name or safe_name in {".", ".."}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename",
+        )
+
+    file_path = dataset_dir / safe_name
+    if not file_path.resolve().is_relative_to(dataset_dir.resolve()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename",
+        )
 
     async with aiofiles.open(file_path, "wb") as f:
         content = await file.read()
         await f.write(content)
 
     # Determine file type
-    file_ext = Path(file.filename).suffix.lower().lstrip(".")
+    file_ext = Path(safe_name).suffix.lower().lstrip(".")
     file_type_map = {
         "csv": "csv",
         "tsv": "tsv",
