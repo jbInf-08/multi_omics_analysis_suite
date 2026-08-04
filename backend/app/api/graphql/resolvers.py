@@ -4,6 +4,7 @@
 Database query resolvers for GraphQL queries.
 """
 
+import logging
 from uuid import UUID
 
 import strawberry
@@ -18,6 +19,8 @@ from backend.app.api.graphql.types import (
     UserType,
 )
 from backend.app.core.database import get_async_session
+
+logger = logging.getLogger(__name__)
 
 
 def model_to_user_type(user) -> UserType:
@@ -111,7 +114,10 @@ async def get_user(id: str) -> UserType | None:
             if user:
                 return model_to_user_type(user)
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return None
 
 
@@ -127,7 +133,10 @@ async def get_users(limit: int, offset: int) -> list[UserType]:
             users = result.scalars().all()
             return [model_to_user_type(u) for u in users]
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return []
 
 
@@ -142,7 +151,10 @@ async def get_project(id: str) -> ProjectType | None:
             if project:
                 return model_to_project_type(project)
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return None
 
 
@@ -165,9 +177,13 @@ async def get_projects(
             if status:
                 try:
                     status_enum = ProjectStatus(status)
-                    query = query.where(Project.status == status_enum)
                 except ValueError:
-                    pass
+                    # An unrecognised value used to drop the filter and return
+                    # every row, which reads to the caller as "these all match".
+                    # Nothing has this status, so nothing matches.
+                    logger.info("Unknown status filter %r; returning no rows", status)
+                    return []
+                query = query.where(Project.status == status_enum)
 
             query = query.order_by(Project.updated_at.desc()).limit(limit).offset(offset)
 
@@ -175,7 +191,10 @@ async def get_projects(
             projects = result.scalars().all()
             return [model_to_project_type(p) for p in projects]
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return []
 
 
@@ -190,7 +209,10 @@ async def get_dataset(id: str) -> DatasetType | None:
             if dataset:
                 return model_to_dataset_type(dataset)
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return None
 
 
@@ -213,9 +235,13 @@ async def get_datasets(
             if omics_type:
                 try:
                     omics_enum = OmicsType(omics_type)
-                    query = query.where(Dataset.omics_type == omics_enum)
                 except ValueError:
-                    pass
+                    # An unrecognised value used to drop the filter and return
+                    # every row, which reads to the caller as "these all match".
+                    # Nothing has this omics_type, so nothing matches.
+                    logger.info("Unknown omics_type filter %r; returning no rows", omics_type)
+                    return []
+                query = query.where(Dataset.omics_type == omics_enum)
 
             query = query.order_by(Dataset.updated_at.desc()).limit(limit).offset(offset)
 
@@ -223,7 +249,10 @@ async def get_datasets(
             datasets = result.scalars().all()
             return [model_to_dataset_type(d) for d in datasets]
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return []
 
 
@@ -238,7 +267,10 @@ async def get_analysis(id: str) -> AnalysisType | None:
             if analysis:
                 return model_to_analysis_type(analysis)
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return None
 
 
@@ -261,9 +293,13 @@ async def get_analyses(
             if status:
                 try:
                     status_enum = AnalysisStatus(status)
-                    query = query.where(Analysis.status == status_enum)
                 except ValueError:
-                    pass
+                    # An unrecognised value used to drop the filter and return
+                    # every row, which reads to the caller as "these all match".
+                    # Nothing has this status, so nothing matches.
+                    logger.info("Unknown status filter %r; returning no rows", status)
+                    return []
+                query = query.where(Analysis.status == status_enum)
 
             query = query.order_by(Analysis.created_at.desc()).limit(limit).offset(offset)
 
@@ -271,7 +307,10 @@ async def get_analyses(
             analyses = result.scalars().all()
             return [model_to_analysis_type(a) for a in analyses]
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return []
 
 
@@ -371,5 +410,8 @@ async def get_pipelines(
                 for p in pipelines
             ]
         except Exception:
-            pass
+            # Returning the empty result is the established contract here, but
+            # a database error used to be indistinguishable from "nothing
+            # found". Log it so the difference is visible in the logs at least.
+            logger.exception("GraphQL resolver failed")
     return []

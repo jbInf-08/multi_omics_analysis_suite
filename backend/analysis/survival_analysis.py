@@ -177,8 +177,8 @@ class KaplanMeierEstimator:
         try:
             rmst = restricted_mean_survival_time(self.fitter_)
             self.result_.restricted_mean = rmst
-        except:
-            pass
+        except Exception:
+            logger.debug("restricted mean survival time unavailable", exc_info=True)
 
         return self
 

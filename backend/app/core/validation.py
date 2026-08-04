@@ -550,6 +550,8 @@ def create_provenance(
         import numpy
 
         software_versions["numpy"] = numpy.__version__
+    # Optional at runtime: the version is recorded when the package is
+    # installed and omitted when it is not. Nothing to handle.
     except ImportError:
         pass
 
@@ -557,6 +559,8 @@ def create_provenance(
         import pandas
 
         software_versions["pandas"] = pandas.__version__
+    # Optional at runtime: the version is recorded when the package is
+    # installed and omitted when it is not. Nothing to handle.
     except ImportError:
         pass
 
@@ -564,6 +568,8 @@ def create_provenance(
         import scipy
 
         software_versions["scipy"] = scipy.__version__
+    # Optional at runtime: the version is recorded when the package is
+    # installed and omitted when it is not. Nothing to handle.
     except ImportError:
         pass
 

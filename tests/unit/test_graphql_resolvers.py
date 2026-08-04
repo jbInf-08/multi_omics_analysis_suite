@@ -128,3 +128,71 @@ class TestGetDatasetsAsync:
         with patch("backend.app.api.graphql.resolvers.get_async_session", return_value=fake_gen()):
             result = await get_datasets(project_id=None, omics_type=None, limit=10, offset=0)
             assert result == []
+
+
+@pytest.mark.asyncio
+class TestUnknownEnumFilters:
+    """An unrecognised filter value must not widen the result set.
+
+    These resolvers coerce a string filter into an enum. A ValueError used to
+    be swallowed with `pass`, which left the `where` clause off the query
+    entirely -- so asking for a status that does not exist returned *every*
+    row, with a 200, and the caller had no way to tell the filter had been
+    dropped. Nothing carries an unknown status, so nothing should come back.
+    """
+
+    @staticmethod
+    def _session_yielding(rows):
+        """A session whose execute() returns `rows`, recording the queries."""
+        executed = []
+
+        async def fake_gen():
+            session = AsyncMock()
+
+            async def execute(query):
+                executed.append(query)
+                result = MagicMock()
+                result.scalars.return_value.all.return_value = rows
+                return result
+
+            session.execute = execute
+            yield session
+
+        return fake_gen, executed
+
+    async def test_unknown_project_status_returns_no_rows(self):
+        rows = [MagicMock()]  # the DB would happily hand these back
+        fake_gen, executed = self._session_yielding(rows)
+        with patch(
+            "backend.app.api.graphql.resolvers.get_async_session",
+            return_value=fake_gen(),
+        ):
+            result = await get_projects(
+                user_id=None, status="not-a-real-status", limit=10, offset=0
+            )
+        assert result == []
+        assert executed == [], "the query should not run at all for an unknown status"
+
+    async def test_unknown_omics_type_returns_no_rows(self):
+        rows = [MagicMock()]
+        fake_gen, executed = self._session_yielding(rows)
+        with patch(
+            "backend.app.api.graphql.resolvers.get_async_session",
+            return_value=fake_gen(),
+        ):
+            result = await get_datasets(
+                project_id=None, omics_type="not-a-real-omics-type", limit=10, offset=0
+            )
+        assert result == []
+        assert executed == [], "the query should not run at all for an unknown type"
+
+    async def test_absent_filter_still_queries(self):
+        """The guard must not fire when no filter was supplied."""
+        fake_gen, executed = self._session_yielding([])
+        with patch(
+            "backend.app.api.graphql.resolvers.get_async_session",
+            return_value=fake_gen(),
+        ):
+            result = await get_projects(user_id=None, status=None, limit=10, offset=0)
+        assert result == []
+        assert len(executed) == 1, "a query should still run when nothing is filtered"
