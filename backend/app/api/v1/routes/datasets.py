@@ -1,5 +1,6 @@
 """Dataset Routes."""
 
+import os.path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -18,6 +19,32 @@ from backend.app.schemas.dataset import (
 )
 
 router = APIRouter()
+
+
+def safe_upload_filename(filename: str | None) -> str | None:
+    """Reduce an uploaded filename to a single, harmless path component.
+
+    The filename arrives in the multipart body, so the client chooses it, and
+    joining it onto a directory unchanged lets it escape:
+    ``Path("/data/uploads/1") / "/etc/passwd"`` is ``/etc/passwd`` -- pathlib
+    returns the right-hand side whole when it is absolute -- and ``"../../.."``
+    walks out the ordinary way.
+
+    Returns ``None`` when nothing usable is left (``""``, ``"."``, ``".."``),
+    which the caller turns into a 400 rather than inventing a name.
+
+    ``os.path.basename`` rather than ``PurePath(...).name``: both give the same
+    answer, but basename is what CodeQL recognises as sanitising a path, and a
+    defence the scanner cannot see is one that gets removed later by someone
+    who does not know it is load-bearing. Backslashes are translated first
+    because basename understands only the separator of the host it runs on --
+    on Linux ``"..\\..\\x"`` is a single filename.
+    """
+    candidate = (filename or "").replace("\\", "/")
+    name = os.path.basename(candidate)
+    if not name or name in {".", ".."}:
+        return None
+    return name
 
 
 @router.post("/", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
@@ -187,15 +214,21 @@ async def upload_dataset_file(
     dataset_dir = upload_dir / str(dataset_id)
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save file
-    file_path = dataset_dir / file.filename
+    safe_name = safe_upload_filename(file.filename)
+    if safe_name is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename",
+        )
+
+    file_path = dataset_dir / safe_name
 
     async with aiofiles.open(file_path, "wb") as f:
         content = await file.read()
         await f.write(content)
 
     # Determine file type
-    file_ext = Path(file.filename).suffix.lower().lstrip(".")
+    file_ext = Path(safe_name).suffix.lower().lstrip(".")
     file_type_map = {
         "csv": "csv",
         "tsv": "tsv",
